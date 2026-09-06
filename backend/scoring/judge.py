@@ -101,3 +101,16 @@ def call_judge(prompt: str) -> AttemptScores:
         keep_alive="30m",
     )
     return AttemptScores.model_validate_json(response["message"]["content"])
+
+
+def warm_up() -> None:
+    """Loads the model into Ollama at startup so it's already resident by
+    the time a real attempt is submitted. Ollama unloads an idle model after
+    ~5 minutes; without this, the first score after a fresh start (or after
+    a gap between rehearsal and the live demo) pays that reload cost."""
+    ollama.chat(
+        model=MODEL,
+        messages=[{"role": "user", "content": "Reply with the single word: ready"}],
+        options={"num_predict": 10},
+        keep_alive="30m",
+    )

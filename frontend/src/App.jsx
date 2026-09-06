@@ -1,12 +1,48 @@
 import { useState } from 'react'
-import { createAttempt, getItems, getReport, submitAttempt } from './api'
+import { createAttempt, getItems, getReport, pollReport, submitAttempt } from './api'
 import DeviceCheck from './screens/DeviceCheck'
+import Recruiter from './screens/Recruiter'
 import Report from './screens/Report'
 import Start from './screens/Start'
 import Submitting from './screens/Submitting'
 import Test from './screens/Test'
 
-function App() {
+// No router: the candidate flow is a useState state machine, and the
+// recruiter view is reached at a separate path (there is nothing to link
+// between them within a single candidate's session).
+function RecruiterApp() {
+  const [viewingReport, setViewingReport] = useState(null)
+
+  if (viewingReport) {
+    return (
+      <main className="min-h-screen bg-gray-50 py-10">
+        <div className="max-w-3xl mx-auto mb-4">
+          <button
+            type="button"
+            onClick={() => setViewingReport(null)}
+            className="text-sm text-purple-600 underline"
+          >
+            ← Back to candidates
+          </button>
+        </div>
+        <Report report={viewingReport} />
+      </main>
+    )
+  }
+
+  return (
+    <main className="min-h-screen bg-gray-50 py-10">
+      <Recruiter
+        onOpenReport={async (attemptId) => {
+          const report = await getReport(attemptId)
+          setViewingReport(report)
+        }}
+      />
+    </main>
+  )
+}
+
+function CandidateApp() {
   const [screen, setScreen] = useState('start')
   const [attemptId, setAttemptId] = useState(null)
   const [items, setItems] = useState([])
@@ -25,7 +61,7 @@ function App() {
     setScreen('submitting')
     try {
       await submitAttempt(attemptId)
-      const fetchedReport = await getReport(attemptId)
+      const fetchedReport = await pollReport(attemptId)
       setReport(fetchedReport)
       setScreen('report')
     } catch {
@@ -46,6 +82,10 @@ function App() {
       {screen === 'report' && report && <Report report={report} />}
     </main>
   )
+}
+
+function App() {
+  return window.location.pathname === '/recruiter' ? <RecruiterApp /> : <CandidateApp />
 }
 
 export default App

@@ -49,3 +49,28 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
 - T2.11 — Ollama judge call: verified against a realistic writing+speaking sample, returns a valid parsed `AttemptScores`, ~2s response.
 - T2.12 — Sanity clamp (`clamp.py`): verified it caps fluency to ≤3 when features are clearly halting (speech_rate<90, mean_length_of_run<4), regardless of what the model scored.
 - T2.13 — **Sequential pipeline orchestrator** (`pipeline.py`), wired into `/submit` via `BackgroundTasks`. S1 (read-aloud) is scored deterministically from WER + the rubric's own fluency thresholds (Whisper only, no LLM, per PRD §5.1); S2 goes to the judge and through the sanity clamp; CIR is the weighted composite per PRD §5.5. Verified end-to-end over real HTTP: submit → status `scoring` → poll → status `done` in ~15s, with correct grammar/listening/speaking_fluency×2/situational_task_fulfilment/writing_tone/cir rows, audio URLs playable (200 OK), and justifications that actually reference the acoustic features. Also verified the failure path: a judge exception leaves the attempt in `error` status with the reason recorded, never stuck in `scoring`. **D1 (demo PRD success criterion) is met.**
+
+## Day 3 — Making it look like a product
+
+- T3.1 — CIR composite: computed in `pipeline.py` per the exact §5.5 weights; verified above (all-6 inputs → CIR 6.0 → band 6; the mixed-proficiency seeds below hand-check too).
+- T3.2 — Radar chart (`ScoreRadar.jsx`, Recharts), 5 axes (grammar, listening, speaking fluency, writing tone, task fulfilment), domain fixed to 0-6 via `PolarRadiusAxis`.
+- T3.3 — Audio-beside-score (`SpeakingCard` in `Report.jsx`): player, band, transcript, justification, and the feature table together in one card per speaking item — "the demo's most important pixel."
+- T3.4 — Transcript + evidence display: done as part of T3.3/writing section (transcript, feature numbers, one-line justification all visible).
+- T3.5 — Overall band + recommendation banner: large CIR number, colour-coded (green/yellow/red). Threshold chosen since the PRD doesn't specify one numerically: band≥5 Recommended, band=4 Borderline, band≤3 Not Recommended.
+- T3.6 — Recruiter table (`Recruiter.jsx`, reached at `/recruiter` - no router, so a separate path rather than a link from the candidate flow): name, overall, 5 sub-bands, status, timestamp, sortable by any column, links into the same `Report` component. Verified the route resolves through the Vite dev server and the API proxy returns real data.
+- T3.7 — **Seeded attempts**: `seed_attempts.py` + `seed_audio/` (SSML-synthesized, since no live mic in this environment) run 4 candidates through the *real* pipeline end-to-end. Result: CIR bands 6, 5, 4, 2 - D2 (≥2-band spread between strong/weak) is met with room to spare, and D6 (seeded fallback) is satisfiable by running the script once before a live demo. **Deliberately not committed to git**: `demo.db` and `audio/` are generated runtime state (already gitignored) - `seed_attempts.py` and its source `seed_audio/` wavs are the reproducible input, consistent with not committing databases as artifacts. Operationally: run `.venv/Scripts/python seed_attempts.py` once against a running backend before demoing.
+- T3.8 — Startup warm-up: a dummy Ollama call fires on FastAPI startup (background thread, non-blocking) so the model is resident before anyone touches the app.
+- T3.9 — **Not independently verified** - I cannot toggle airplane mode in this environment. Verified by code audit instead: the only network calls anywhere in the runtime path are to `localhost` (Ollama) and local subprocess calls (ffprobe); no external HTTP call exists in `scoring/`, `main.py`, or the frontend's runtime code (the Vite dev server proxy and the built bundle both call only relative `/api` and `/static` paths). A literal cable-pull test on the demo machine is still owed.
+- T3.10 — **Not independently verified** - no browser tool available to check actual rendering at 380px. The layout uses `max-w-*` + Tailwind flex/grid throughout (no fixed pixel widths), which is responsive-friendly by construction, but this is a design intent, not a verified result.
+- T3.11, T3.12, T3.13 — **Not done.** These require a physical run-through on the actual demo phone/device, which this environment cannot perform. T3.12's limitations card content is captured below since it's pure writing, not a device-dependent test.
+
+### Limitations card (T3.12 content - demo PRD §10)
+
+- Scores are **not** validated against human raters - that's the Phase 4 study, n = 200.
+- **Not** CEFR-aligned; CEFR-*referenced* descriptors only.
+- Pronunciation is a proxy (read-aloud WER), not phoneme-level GOP.
+- Item pool is 9 items, not the 200+ a real deployment needs.
+
+### What's owed before this is demo-ready
+
+A physical run-through on the actual device: T3.9 (airplane mode), T3.10 (mobile pass at 380px), T3.11 (three timed run-throughs), T3.13 (failure drill). All of the code these tests would exercise is in place and passes what CAN be verified from here (build, lint, and API-level end-to-end tests) - what's missing is a human, a phone, and a live microphone.

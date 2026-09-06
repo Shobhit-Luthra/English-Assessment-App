@@ -1,5 +1,7 @@
 import json
+import logging
 import subprocess
+import threading
 from pathlib import Path
 from typing import Annotated
 
@@ -10,8 +12,11 @@ from sqlmodel import Session, select
 
 from db import get_session, init_db
 from models import Attempt, Response, Score
+from scoring.judge import warm_up
 from scoring.objective import score_section
 from scoring.pipeline import run_scoring_pipeline
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent
 ITEMS_PATH = BASE_DIR / "items.json"
@@ -46,6 +51,13 @@ _ITEMS_BY_ID: dict[str, dict] = {}
 _ANSWER_KEY_FIELDS = {"answer"}
 
 
+def _warm_up_judge_in_background() -> None:
+    try:
+        warm_up()
+    except Exception:  # noqa: BLE001 - startup warm-up is best-effort
+        logger.exception("Ollama warm-up call failed; first real score will pay the load cost")
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
@@ -54,6 +66,8 @@ def on_startup() -> None:
     _ITEMS_PUBLIC["items"] = [
         {k: v for k, v in item.items() if k not in _ANSWER_KEY_FIELDS} for item in items
     ]
+    # Fire-and-forget: don't block server startup on Ollama being ready.
+    threading.Thread(target=_warm_up_judge_in_background, daemon=True).start()
     for item in items:
         _ITEMS_BY_SECTION.setdefault(item["section"], []).append(item)
         _ITEMS_BY_ID[item["id"]] = item
@@ -220,11 +234,15 @@ def get_report(attempt_id: str, session: SessionDep):
     scores = session.exec(select(Score).where(Score.attempt_id == attempt_id)).all()
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
     audio_by_item = {r.item_id: r.audio_path for r in responses if r.audio_path}
+    text_by_item = {r.item_id: r.text for r in responses if r.text}
 
     def _audio_url(evidence: dict) -> str | None:
         item_id = evidence.get("item_id")
         path = audio_by_item.get(item_id)
         return f"/{path.replace(chr(92), '/')}" if path else None
+
+    def _response_text(evidence: dict) -> str | None:
+        return text_by_item.get(evidence.get("item_id"))
 
     return {
         "attempt_id": attempt.id,
@@ -237,6 +255,7 @@ def get_report(attempt_id: str, session: SessionDep):
                 "band": s.band,
                 "evidence": s.evidence,
                 "audio_url": _audio_url(s.evidence),
+                "response_text": _response_text(s.evidence),
             }
             for s in scores
         ],

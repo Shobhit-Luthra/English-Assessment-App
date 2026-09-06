@@ -48,6 +48,22 @@ export function getReport(attemptId) {
   return request(`/api/attempts/${attemptId}/report`)
 }
 
+// Objective sections score synchronously, but audio transcription + the LLM
+// judge run in the background (~15-30s) - poll until the pipeline leaves
+// "scoring". Caps at ~90s so a stuck attempt surfaces as an error instead of
+// polling forever.
+export async function pollReport(attemptId, { intervalMs = 2000, timeoutMs = 90000 } = {}) {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const report = await getReport(attemptId)
+    if (report.status !== 'scoring') return report
+    if (Date.now() >= deadline) {
+      throw new Error('Scoring is taking longer than expected.')
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
+
 export function listAttempts() {
   return request('/api/attempts')
 }
