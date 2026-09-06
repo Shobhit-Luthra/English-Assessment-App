@@ -1,10 +1,25 @@
+import gc
 from dataclasses import dataclass
 
 from faster_whisper import WhisperModel
 
-# Loaded once at import time - reloading per request costs ~1s and ~1GB RAM
-# per call, which is slow enough to look broken.
-_model = WhisperModel("small", device="cpu", compute_type="int8")
+_model: WhisperModel | None = None
+
+
+def _get_model() -> WhisperModel:
+    global _model
+    if _model is None:
+        _model = WhisperModel("small", device="cpu", compute_type="int8")
+    return _model
+
+
+def unload_model() -> None:
+    """Release Whisper before the Ollama judge call - both compete for the
+    same CPU/RAM, and running them concurrently causes swapping and
+    multi-minute stalls (see demo PRD §5.4)."""
+    global _model
+    _model = None
+    gc.collect()
 
 
 @dataclass
@@ -15,7 +30,8 @@ class Word:
 
 
 def transcribe(audio_path: str) -> tuple[str, list[Word]]:
-    segments, _info = _model.transcribe(audio_path, word_timestamps=True)
+    model = _get_model()
+    segments, _info = model.transcribe(audio_path, word_timestamps=True)
     words: list[Word] = []
     parts: list[str] = []
     for segment in segments:
