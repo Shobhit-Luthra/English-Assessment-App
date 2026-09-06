@@ -1,8 +1,9 @@
 import json
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -13,6 +14,17 @@ from scoring.objective import score_section
 
 BASE_DIR = Path(__file__).parent
 ITEMS_PATH = BASE_DIR / "items.json"
+AUDIO_DIR = BASE_DIR / "audio"
+
+# Only these are accepted from MediaRecorder in the two browsers we target
+# (Chrome -> webm/opus, Safari -> mp4/aac). Anything else is rejected before
+# it touches disk.
+_ALLOWED_AUDIO_TYPES = {
+    "audio/webm": "webm",
+    "audio/webm;codecs=opus": "webm",
+    "audio/mp4": "mp4",
+}
+_MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB - generous for a <=45s clip
 
 app = FastAPI(title="English Assessment Demo API")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -98,6 +110,70 @@ def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: Se
 
     session.commit()
     return {"ok": True}
+
+
+def _probe_duration_ms(path: Path) -> int:
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
+         "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True, text=True, timeout=10,
+    )
+    return int(float(result.stdout.strip()) * 1000)
+
+
+@app.post("/api/attempts/{attempt_id}/audio")
+async def upload_audio(
+    attempt_id: str,
+    session: SessionDep,
+    item_id: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+):
+    attempt = _get_attempt_or_404(session, attempt_id)
+    if attempt.status != "in_progress":
+        raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
+    if item_id not in _ITEM_IDS:
+        raise HTTPException(status_code=400, detail="Unknown item_id")
+
+    ext = _ALLOWED_AUDIO_TYPES.get(file.content_type)
+    if ext is None:
+        raise HTTPException(status_code=400, detail="Unsupported audio type")
+
+    data = await file.read(_MAX_AUDIO_BYTES + 1)
+    if len(data) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio file too large")
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+
+    attempt_dir = AUDIO_DIR / attempt_id
+    attempt_dir.mkdir(parents=True, exist_ok=True)
+    # item_id is checked against the server's own item whitelist above, so
+    # this path is never attacker-controlled.
+    dest = attempt_dir / f"{item_id}.{ext}"
+    dest.write_bytes(data)
+
+    try:
+        duration_ms = _probe_duration_ms(dest)
+    except (subprocess.SubprocessError, ValueError, OSError):
+        duration_ms = None
+
+    existing = session.exec(
+        select(Response).where(Response.attempt_id == attempt_id, Response.item_id == item_id)
+    ).first()
+    if existing:
+        existing.audio_path = str(dest.relative_to(BASE_DIR))
+        existing.duration_ms = duration_ms
+        session.add(existing)
+    else:
+        session.add(
+            Response(
+                attempt_id=attempt_id,
+                item_id=item_id,
+                audio_path=str(dest.relative_to(BASE_DIR)),
+                duration_ms=duration_ms,
+            )
+        )
+    session.commit()
+    return {"ok": True, "duration_ms": duration_ms}
 
 
 @app.post("/api/attempts/{attempt_id}/submit")

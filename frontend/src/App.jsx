@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { createAttempt, getItems, getReport, submitAttempt } from './api'
+import DeviceCheck from './screens/DeviceCheck'
 import Report from './screens/Report'
 import Start from './screens/Start'
 import Submitting from './screens/Submitting'
 import Test from './screens/Test'
 
-// Day 1 screen states. 'check' (mic device gate) is added in Day 2 once a
-// recorder exists to check.
 function App() {
   const [screen, setScreen] = useState('start')
   const [attemptId, setAttemptId] = useState(null)
@@ -19,7 +18,7 @@ function App() {
     const { attempt_id } = await createAttempt(name)
     setItems(fetchedItems)
     setAttemptId(attempt_id)
-    setScreen('test')
+    setScreen('check')
   }
 
   const handleTestComplete = async () => {
@@ -39,6 +38,7 @@ function App() {
     <main className="min-h-screen bg-gray-50 py-10">
       {error && <p className="text-center text-sm text-red-600 mb-4">{error}</p>}
       {screen === 'start' && <Start onBegin={handleBegin} />}
+      {screen === 'check' && <DeviceCheck onConfirmed={() => setScreen('test')} />}
       {screen === 'test' && (
         <Test attemptId={attemptId} items={items} onComplete={handleTestComplete} />
       )}

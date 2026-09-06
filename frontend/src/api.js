@@ -27,6 +27,19 @@ export function submitResponse(attemptId, itemId, text) {
   })
 }
 
+export async function uploadAudio(attemptId, itemId, blob, mimeType) {
+  const ext = mimeType.includes('webm') ? 'webm' : 'mp4'
+  const form = new FormData()
+  form.append('item_id', itemId)
+  form.append('file', blob, `${itemId}.${ext}`)
+  const res = await fetch(`/api/attempts/${attemptId}/audio`, { method: 'POST', body: form })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`${res.status} audio upload: ${body}`)
+  }
+  return res.json()
+}
+
 export function submitAttempt(attemptId) {
   return request(`/api/attempts/${attemptId}/submit`, { method: 'POST' })
 }
