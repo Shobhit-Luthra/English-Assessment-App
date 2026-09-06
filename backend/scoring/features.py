@@ -79,3 +79,71 @@ def word_error_rate(reference_text: str, hypothesis_text: str) -> float:
 
     distance = prev_row[-1]
     return distance / len(ref)
+
+
+def _band_speech_rate(sr: float) -> int:
+    if sr >= 130:
+        return 6
+    if sr >= 110:
+        return 5
+    if sr >= 100:
+        return 4
+    if sr >= 90:
+        return 3
+    if sr > 0:
+        return 2
+    return 1
+
+
+def _band_phonation_ratio(pr: float) -> int:
+    if pr > 0.65:
+        return 6
+    if pr >= 0.58:
+        return 5
+    if pr >= 0.50:
+        return 4
+    if pr >= 0.42:
+        return 3
+    if pr > 0:
+        return 2
+    return 1
+
+
+def _band_mean_length_of_run(mlr: float) -> int:
+    if mlr > 7:
+        return 6
+    if mlr >= 5:
+        return 5
+    if mlr >= 4:
+        return 4
+    if mlr >= 3:
+        return 3
+    if mlr > 0:
+        return 2
+    return 1
+
+
+def deterministic_fluency_band(features: dict) -> int:
+    """Fluency band straight from the rubric's own thresholds - no LLM
+    involved. Used for S1 (read-aloud), which the PRD scores via Whisper
+    only (WER + fluency arithmetic), never the judge."""
+    bands = [
+        _band_speech_rate(features["speech_rate"]),
+        _band_phonation_ratio(features["phonation_ratio"]),
+        _band_mean_length_of_run(features["mean_length_of_run"]),
+    ]
+    return round(sum(bands) / len(bands))
+
+
+def band_from_wer(wer: float) -> int:
+    if wer <= 0.05:
+        return 6
+    if wer <= 0.15:
+        return 5
+    if wer <= 0.30:
+        return 4
+    if wer <= 0.50:
+        return 3
+    if wer <= 0.75:
+        return 2
+    return 1

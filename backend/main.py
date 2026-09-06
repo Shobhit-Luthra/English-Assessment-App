@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from db import get_session, init_db
 from models import Attempt, Response, Score
 from scoring.objective import score_section
+from scoring.pipeline import run_scoring_pipeline
 
 BASE_DIR = Path(__file__).parent
 ITEMS_PATH = BASE_DIR / "items.json"
@@ -26,14 +27,18 @@ _ALLOWED_AUDIO_TYPES = {
 }
 _MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB - generous for a <=45s clip
 
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
 app = FastAPI(title="English Assessment Demo API")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
 _ITEM_IDS: set[str] = set()
 _ITEMS_PUBLIC: dict = {}
 _ITEMS_BY_SECTION: dict[str, list[dict]] = {}
+_ITEMS_BY_ID: dict[str, dict] = {}
 
 # Fields never sent to the client while a test is in progress - "answer" is
 # the MCQ answer key; leaking it lets a candidate read it from the network
@@ -51,6 +56,7 @@ def on_startup() -> None:
     ]
     for item in items:
         _ITEMS_BY_SECTION.setdefault(item["section"], []).append(item)
+        _ITEMS_BY_ID[item["id"]] = item
 
 
 class CreateAttemptRequest(BaseModel):
@@ -177,7 +183,7 @@ async def upload_audio(
 
 
 @app.post("/api/attempts/{attempt_id}/submit")
-def submit_attempt(attempt_id: str, session: SessionDep):
+def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep):
     attempt = _get_attempt_or_404(session, attempt_id)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt already submitted")
@@ -197,9 +203,14 @@ def submit_attempt(attempt_id: str, session: SessionDep):
             )
         )
 
-    attempt.status = "done"
+    # Objective sections score synchronously (instant); audio transcription
+    # and the LLM judge run in the background - they take ~30s and the
+    # client polls /report until status leaves "scoring".
+    attempt.status = "scoring"
     session.add(attempt)
     session.commit()
+
+    background_tasks.add_task(run_scoring_pipeline, attempt_id, _ITEMS_BY_ID, _ITEMS_BY_SECTION)
     return {"ok": True}
 
 
@@ -207,12 +218,27 @@ def submit_attempt(attempt_id: str, session: SessionDep):
 def get_report(attempt_id: str, session: SessionDep):
     attempt = _get_attempt_or_404(session, attempt_id)
     scores = session.exec(select(Score).where(Score.attempt_id == attempt_id)).all()
+    responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
+    audio_by_item = {r.item_id: r.audio_path for r in responses if r.audio_path}
+
+    def _audio_url(evidence: dict) -> str | None:
+        item_id = evidence.get("item_id")
+        path = audio_by_item.get(item_id)
+        return f"/{path.replace(chr(92), '/')}" if path else None
+
     return {
         "attempt_id": attempt.id,
         "name": attempt.name,
         "status": attempt.status,
+        "error": attempt.error,
         "scores": [
-            {"dimension": s.dimension, "band": s.band, "evidence": s.evidence} for s in scores
+            {
+                "dimension": s.dimension,
+                "band": s.band,
+                "evidence": s.evidence,
+                "audio_url": _audio_url(s.evidence),
+            }
+            for s in scores
         ],
     }
 

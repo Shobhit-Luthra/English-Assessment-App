@@ -12,7 +12,8 @@ def _now() -> datetime:
 class Attempt(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     name: str
-    status: str = Field(default="in_progress")  # in_progress | scoring | done
+    status: str = Field(default="in_progress")  # in_progress | scoring | done | error
+    error: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
 
 
