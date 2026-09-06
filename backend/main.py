@@ -19,6 +19,12 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 SessionDep = Annotated[Session, Depends(get_session)]
 
 _ITEM_IDS: set[str] = set()
+_ITEMS_PUBLIC: dict = {}
+
+# Fields never sent to the client while a test is in progress - "answer" is
+# the MCQ answer key; leaking it lets a candidate read it from the network
+# tab and always score 100%.
+_ANSWER_KEY_FIELDS = {"answer"}
 
 
 @app.on_event("startup")
@@ -26,6 +32,9 @@ def on_startup() -> None:
     init_db()
     items = json.loads(ITEMS_PATH.read_text(encoding="utf-8"))["items"]
     _ITEM_IDS.update(item["id"] for item in items)
+    _ITEMS_PUBLIC["items"] = [
+        {k: v for k, v in item.items() if k not in _ANSWER_KEY_FIELDS} for item in items
+    ]
 
 
 class CreateAttemptRequest(BaseModel):
@@ -38,7 +47,7 @@ class CreateAttemptResponse(BaseModel):
 
 @app.get("/api/items")
 def get_items():
-    return json.loads(ITEMS_PATH.read_text(encoding="utf-8"))
+    return _ITEMS_PUBLIC
 
 
 @app.post("/api/attempts", response_model=CreateAttemptResponse)
@@ -64,7 +73,9 @@ def _get_attempt_or_404(session: Session, attempt_id: str) -> Attempt:
 
 @app.post("/api/attempts/{attempt_id}/response")
 def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: SessionDep):
-    _get_attempt_or_404(session, attempt_id)
+    attempt = _get_attempt_or_404(session, attempt_id)
+    if attempt.status != "in_progress":
+        raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     if payload.item_id not in _ITEM_IDS:
         raise HTTPException(status_code=400, detail="Unknown item_id")
 
