@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from db import get_session, init_db
-from models import Attempt, Response
+from models import Attempt, Response, Score
+from scoring.objective import score_section
 
 BASE_DIR = Path(__file__).parent
 ITEMS_PATH = BASE_DIR / "items.json"
@@ -20,6 +21,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 _ITEM_IDS: set[str] = set()
 _ITEMS_PUBLIC: dict = {}
+_ITEMS_BY_SECTION: dict[str, list[dict]] = {}
 
 # Fields never sent to the client while a test is in progress - "answer" is
 # the MCQ answer key; leaking it lets a candidate read it from the network
@@ -35,6 +37,8 @@ def on_startup() -> None:
     _ITEMS_PUBLIC["items"] = [
         {k: v for k, v in item.items() if k not in _ANSWER_KEY_FIELDS} for item in items
     ]
+    for item in items:
+        _ITEMS_BY_SECTION.setdefault(item["section"], []).append(item)
 
 
 class CreateAttemptRequest(BaseModel):
@@ -94,3 +98,53 @@ def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: Se
 
     session.commit()
     return {"ok": True}
+
+
+@app.post("/api/attempts/{attempt_id}/submit")
+def submit_attempt(attempt_id: str, session: SessionDep):
+    attempt = _get_attempt_or_404(session, attempt_id)
+    if attempt.status != "in_progress":
+        raise HTTPException(status_code=409, detail="Attempt already submitted")
+
+    responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
+    responses_by_item = {r.item_id: r.text for r in responses if r.text is not None}
+
+    for dimension in ("grammar", "listening"):
+        section_items = _ITEMS_BY_SECTION.get(dimension, [])
+        result = score_section(section_items, responses_by_item)
+        session.add(
+            Score(
+                attempt_id=attempt_id,
+                dimension=dimension,
+                band=result["band"],
+                evidence=result["evidence"],
+            )
+        )
+
+    attempt.status = "done"
+    session.add(attempt)
+    session.commit()
+    return {"ok": True}
+
+
+@app.get("/api/attempts/{attempt_id}/report")
+def get_report(attempt_id: str, session: SessionDep):
+    attempt = _get_attempt_or_404(session, attempt_id)
+    scores = session.exec(select(Score).where(Score.attempt_id == attempt_id)).all()
+    return {
+        "attempt_id": attempt.id,
+        "name": attempt.name,
+        "status": attempt.status,
+        "scores": [
+            {"dimension": s.dimension, "band": s.band, "evidence": s.evidence} for s in scores
+        ],
+    }
+
+
+@app.get("/api/attempts")
+def list_attempts(session: SessionDep):
+    attempts = session.exec(select(Attempt)).all()
+    return [
+        {"attempt_id": a.id, "name": a.name, "status": a.status, "created_at": a.created_at}
+        for a in attempts
+    ]
