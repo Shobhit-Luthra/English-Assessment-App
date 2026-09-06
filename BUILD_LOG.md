@@ -32,3 +32,14 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
 - T1.16 — `POST /submit` (scores grammar+listening, locks the attempt) and `GET /report` verified end-to-end via curl
 - T1.17 — Bare report screen (numbers only, no chart yet)
 - Frontend build (`npm run build`) and lint (`oxlint`) both clean. **Not yet verified in an actual browser** — no browser-automation tool is available in this environment; verification so far is production build + lint + manual code trace + curl against the API through the Vite proxy. A real click-through (ideally on a phone, per D1) is still owed before Day 1 is considered done.
+
+## Day 2 — Audio and the scoring engine
+
+- T2.1 — `useRecorder` hook: MediaRecorder → webm/opus (mp4 fallback via `isTypeSupported`), auto-stop at the time limit
+- T2.2 — Device-check screen: mic permission → 5s record → playback → confirm checkbox gates the Continue button
+- T2.3 — Speaking item component: prep countdown → auto-record → auto-stop → single playback → Submit (no re-record); `phase` derived from recorder state, not stored separately, so no extra render cascade
+- T2.4 — `POST /audio`: multipart upload, content-type allowlist (webm/mp4 only), 10MB cap, saves to `./audio/{attempt_id}/{item_id}.{ext}`, `ffprobe` duration recorded on the `Response` row. Verified: file lands on disk, duration matches, bad content-type and unknown item both rejected (400)
+- T2.5 — `scoring/asr.py`: faster-whisper `small`/cpu/int8 loaded once at import; `transcribe()` returns transcript + word list. Verified on synthesized S1 audio: exact transcript match, correct word count and timestamps
+- T2.6 — `scoring/features.py`: all six PRD §5.2 formulas. Verified against a hand-computed 5-word example (speech_rate, phonation_ratio, mean_length_of_run all matched exactly)
+- T2.7 — Read-aloud WER (token-level Levenshtein / normalized reference length). Verified: identical strings → 0.0, equal-length completely-different strings → 1.0. (Note: WER can exceed 1.0 when the hypothesis is longer than the reference due to insertions — correct WER behavior, not a bug.)
+- T2.8 — **Threshold calibration** (the plan's "most important 45 minutes"): synthesized fluent/moderate/halting samples via SSML rate + `<break>` tags (no real recording device available in this environment). All three metrics visibly separated: speech_rate 199.6 → 117.3 → 64.9 wpm, phonation_ratio 0.73 → 0.62 → 0.50, mean_length_of_run 6.80 → 4.88 → 2.58. `PAUSE_THRESHOLD=0.25s` required no tuning.
