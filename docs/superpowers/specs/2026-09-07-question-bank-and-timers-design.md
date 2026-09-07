@@ -1,7 +1,7 @@
 # Question Bank, Per-Question Timers, and Test-Flow Features — Design
 
 **Date:** 2026-09-07
-**Status:** Awaiting review
+**Status:** Implemented (2026-09-07)
 **Relationship to demo PRD (`02-demo-prd.md`):** deliberate expansion. The demo
 PRD cut "item bank CRUD / admin UI" and "adaptive selection, item rotation"
 because no pool existed. This design adds a randomised pool and per-attempt

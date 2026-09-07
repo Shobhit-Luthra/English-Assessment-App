@@ -80,6 +80,30 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
 - Pronunciation is a proxy (read-aloud WER), not phoneme-level GOP.
 - Item pool is ~138 items (`bank.json`), not the 200+ a real deployment needs — and still **not calibrated / not human-rater-validated**.
 
+### Day 4 — verification
+
+**Test suite results:**
+- Backend (pytest): 26 passed, 4 warnings (deprecation notices for on_event, starlette, httpx compatibility)
+- Frontend (vitest): 19 tests passed across 6 test files
+- Lint (oxlint): clean, no issues
+- Build (vite): successful, 496.69 kB JS (gzip 151 kB), dist ready
+
+**Sanity checks:**
+- Grep for old references (`_ITEM_IDS`, `_ITEMS_BY_SECTION`, `items.json`, `getItems`): only seed_attempts.py references found (expected, uses hardcoded set via env-gated hook)
+- File state: `backend/items.json` gone ✓, `backend/bank.json` present (138 items) ✓
+
+**Static flow trace (code audit):**
+- App.jsx → Test.jsx flow coherent: create attempt → GET items (shuffled, answer stripped) → submit responses (item-scoped, canonical mapping) → submit → poll report
+- All endpoints wired correctly: POST /api/attempts creates with selection, GET /api/attempts/{id}/items returns filtered items, POST .../response with canonical mapping, POST .../submit scores objective + queues pipeline, GET .../report polls for completion
+- No wiring gaps found
+
+**What is still owed (cannot be verified in this environment):**
+- Live browser click-through (candidate flow: start → device check → 10 items with timers → submit → report view)
+- Airplane mode / offline test (all calls verified to be same-origin by code audit; no external network calls in scoring pipeline)
+- Seeded attempts band-spread run with Ollama (needs running backend + Ollama service)
+- Mobile layout verification at 380px (responsive layout confirmed by code, but actual rendering not available)
+- Three timed run-throughs per D1, device failure drills per D4 (require physical hardware + human operator)
+
 ### What's owed before this is demo-ready
 
 A physical run-through on the actual device: T3.9 (airplane mode), T3.10 (mobile pass at 380px), T3.11 (three timed run-throughs), T3.13 (failure drill). All of the code these tests would exercise is in place and passes what CAN be verified from here (build, lint, and API-level end-to-end tests) - what's missing is a human, a phone, and a live microphone.
