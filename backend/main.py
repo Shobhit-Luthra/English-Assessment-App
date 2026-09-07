@@ -261,11 +261,16 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt already submitted")
 
+    attempt_items_by_section: dict[str, list[dict]] = {}
+    for item_id in attempt.item_ids:
+        item = _ITEMS_BY_ID[item_id]
+        attempt_items_by_section.setdefault(item["section"], []).append(item)
+
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
     responses_by_item = {r.item_id: r.text for r in responses if r.text is not None}
 
     for dimension in ("grammar", "listening"):
-        section_items = _ITEMS_BY_SECTION.get(dimension, [])
+        section_items = attempt_items_by_section.get(dimension, [])
         result = score_section(section_items, responses_by_item)
         session.add(
             Score(
@@ -283,7 +288,9 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
     session.add(attempt)
     session.commit()
 
-    background_tasks.add_task(run_scoring_pipeline, attempt_id, _ITEMS_BY_ID, _ITEMS_BY_SECTION)
+    background_tasks.add_task(
+        run_scoring_pipeline, attempt_id, _ITEMS_BY_ID, attempt_items_by_section
+    )
     return {"ok": True}
 
 
