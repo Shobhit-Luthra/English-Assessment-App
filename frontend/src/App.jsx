@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createAttempt, getItems, getReport, pollReport, submitAttempt } from './api'
+import { createAttempt, getAttemptItems, getReport, pollReport, submitAttempt } from './api'
 import DeviceCheck from './screens/DeviceCheck'
 import Recruiter from './screens/Recruiter'
 import Report from './screens/Report'
@@ -50,8 +50,8 @@ function CandidateApp() {
   const [error, setError] = useState(null)
 
   const handleBegin = async (name) => {
-    const { items: fetchedItems } = await getItems()
     const { attempt_id } = await createAttempt(name)
+    const { items: fetchedItems } = await getAttemptItems(attempt_id)
     setItems(fetchedItems)
     setAttemptId(attempt_id)
     setScreen('check')

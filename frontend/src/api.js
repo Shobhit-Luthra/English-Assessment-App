@@ -7,8 +7,8 @@ async function request(path, options) {
   return res.json()
 }
 
-export function getItems() {
-  return request('/api/items')
+export function getAttemptItems(attemptId) {
+  return request(`/api/attempts/${attemptId}/items`)
 }
 
 export function createAttempt(name) {
