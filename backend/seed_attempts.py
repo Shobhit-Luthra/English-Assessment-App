@@ -1,9 +1,14 @@
 """Seeds 4 attempts at deliberately different proficiency levels through the
-real scoring pipeline (T3.7). Requires the backend running on :8000.
+real scoring pipeline (T3.7). Requires the backend running on :8000 and
+started with ASSESSMENT_ALLOW_FIXED_SELECTION=1 so the seed can pin a known
+9-item set (g1..s2) against which the proficiency answer maps are defined.
 
-Usage: .venv/Scripts/python seed_attempts.py
+Usage:
+  ASSESSMENT_ALLOW_FIXED_SELECTION=1 .venv/Scripts/python -m uvicorn main:app   # terminal 1
+  .venv/Scripts/python seed_attempts.py                                          # terminal 2
 """
 
+import json
 import time
 from pathlib import Path
 
@@ -61,11 +66,28 @@ CANDIDATES = [
 ]
 
 
-def seed_one(client: httpx.Client, candidate: dict) -> str:
-    attempt_id = client.post("/api/attempts", json={"name": candidate["name"]}).json()["attempt_id"]
+SEED_ITEM_IDS = ["g1", "g2", "g3", "g4", "l1", "l2", "w1", "s1", "s2"]
 
-    for item_id, answer in {**candidate["grammar"], **candidate["listening"]}.items():
-        client.post(f"/api/attempts/{attempt_id}/response", json={"item_id": item_id, "text": answer})
+
+def seed_one(client: httpx.Client, candidate: dict) -> str:
+    attempt_id = client.post(
+        "/api/attempts", json={"name": candidate["name"], "item_ids": SEED_ITEM_IDS}
+    ).json()["attempt_id"]
+
+    served = {i["id"]: i for i in client.get(f"/api/attempts/{attempt_id}/items").json()["items"]}
+    bank = {i["id"]: i for i in json.load(open(Path(__file__).parent / "bank.json"))["items"]}
+
+    def display_letter(item_id: str, canonical: str) -> str:
+        original = bank[item_id]["options"]
+        target_text = original[["a", "b", "c", "d"].index(canonical)]
+        shown = served[item_id]["options"]
+        return ["a", "b", "c", "d"][shown.index(target_text)]
+
+    for item_id, canonical in {**candidate["grammar"], **candidate["listening"]}.items():
+        client.post(
+            f"/api/attempts/{attempt_id}/response",
+            json={"item_id": item_id, "text": display_letter(item_id, canonical)},
+        )
 
     client.post(f"/api/attempts/{attempt_id}/response", json={"item_id": "w1", "text": candidate["writing"]})
 

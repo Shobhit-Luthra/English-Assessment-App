@@ -64,12 +64,21 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
 - T3.10 — **Not independently verified** - no browser tool available to check actual rendering at 380px. The layout uses `max-w-*` + Tailwind flex/grid throughout (no fixed pixel widths), which is responsive-friendly by construction, but this is a design intent, not a verified result.
 - T3.11, T3.12, T3.13 — **Not done.** These require a physical run-through on the actual demo phone/device, which this environment cannot perform. T3.12's limitations card content is captured below since it's pure writing, not a device-dependent test.
 
+## Day 4 — Question bank and timers
+
+- `bank.json` (~138 items) replaces the 9-item `items.json` as the source pool; the original ids `g1..s2` are retained so existing tooling and seed maps stay valid.
+- `POST /api/attempts` now draws a fresh **per-attempt random selection**: 5 grammar / 2 listening / 1 writing / 2 speaking. Selection and per-item MCQ option order are persisted on the attempt so a refresh restores the same test.
+- **Randomised MCQ option order**: `GET /api/attempts/{id}/items` serves options shuffled per the attempt's stored `option_order` with the answer key stripped; `POST .../response` translates the submitted display letter back to the canonical letter before storing.
+- **Timers**: per-question countdown plus a global 12-minute cap; expiry auto-advances / auto-submits.
+- **Section progress bar** and **resume-after-refresh** in the candidate flow.
+- `seed_attempts.py` now pins its fixed 9-item set (`g1..s2`) via the env-gated hook: the backend must be started with `ASSESSMENT_ALLOW_FIXED_SELECTION=1` (off by default, dev-only) for `item_ids` to be honoured; otherwise the request is rejected with HTTP 400. Because option order is shuffled per attempt, the seed reads back the served items and resolves each canonical answer to its display-position letter before posting. `seed_audio.ps1` only synthesises `.wav` files and was unchanged.
+
 ### Limitations card (T3.12 content - demo PRD §10)
 
 - Scores are **not** validated against human raters - that's the Phase 4 study, n = 200.
 - **Not** CEFR-aligned; CEFR-*referenced* descriptors only.
 - Pronunciation is a proxy (read-aloud WER), not phoneme-level GOP.
-- Item pool is 9 items, not the 200+ a real deployment needs.
+- Item pool is ~138 items (`bank.json`), not the 200+ a real deployment needs — and still **not calibrated / not human-rater-validated**.
 
 ### What's owed before this is demo-ready
 
