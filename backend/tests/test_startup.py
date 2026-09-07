@@ -20,6 +20,21 @@ def test_every_bank_item_has_time_limit_and_valid_section():
         assert isinstance(item["time_limit_s"], int) and item["time_limit_s"] > 0
 
 
+def test_bank_is_large_enough_for_variety():
+    main._load_bank()
+    assert len(main._BANK_BY_SECTION["grammar"]) >= 60
+    assert len(main._BANK_BY_SECTION["writing"]) >= 20
+    read_aloud = [i for i in main._BANK_BY_SECTION["speaking"] if i["type"] == "read_aloud"]
+    situational = [i for i in main._BANK_BY_SECTION["speaking"] if i["type"] == "situational"]
+    assert len(read_aloud) >= 8 and len(situational) >= 8
+
+
+def test_no_mcq_always_has_answer_a():
+    main._load_bank()
+    answers = [i["answer"] for i in main._BANK_BY_SECTION["grammar"]]
+    assert len(set(answers)) > 1  # correct option is not always the same letter
+
+
 def test_load_bank_rejects_underfilled_section(tmp_path, monkeypatch):
     thin = tmp_path / "bank.json"
     thin.write_text('{"items": [{"id": "g1", "section": "grammar", "type": "mcq", '
