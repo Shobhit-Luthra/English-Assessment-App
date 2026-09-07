@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import McqItem from '../components/McqItem'
 import SpeakingItem from '../components/SpeakingItem'
 import Timer from '../components/Timer'
@@ -6,11 +6,19 @@ import WritingItem from '../components/WritingItem'
 import { submitResponse, uploadAudio } from '../api'
 
 const SPEAKING_TYPES = new Set(['read_aloud', 'situational'])
+const GLOBAL_LIMIT_S = 720
 
 export default function Test({ attemptId, items, onComplete }) {
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState({})
   const [error, setError] = useState(null)
+  const globalFiredRef = useRef(false)
+
+  const handleGlobalExpire = () => {
+    if (globalFiredRef.current) return
+    globalFiredRef.current = true
+    onComplete()
+  }
 
   const item = items[index]
   const isLast = index === items.length - 1
@@ -62,9 +70,13 @@ export default function Test({ attemptId, items, onComplete }) {
         <span>
           Item {index + 1} of {items.length}
         </span>
-        {!isSpeaking && item.time_limit_s && (
-          <Timer seconds={item.time_limit_s} itemKey={item.id} onExpire={handleTimerExpire} />
-        )}
+        <div className="flex items-center gap-4">
+          <span className="text-gray-400">Test</span>
+          <Timer seconds={GLOBAL_LIMIT_S} itemKey="global" onExpire={handleGlobalExpire} />
+          {!isSpeaking && item.time_limit_s && (
+            <Timer seconds={item.time_limit_s} itemKey={item.id} onExpire={handleTimerExpire} />
+          )}
+        </div>
       </div>
 
       {item.type === 'mcq' && (

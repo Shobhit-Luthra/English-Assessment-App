@@ -23,8 +23,13 @@ export default function Timer({ seconds, onExpire, itemKey }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seconds, itemKey])
 
+  const low = remaining <= 10
   return (
-    <div className="text-sm font-mono tabular-nums text-gray-600" data-testid="timer">
+    <div
+      className={`text-sm font-mono tabular-nums ${low ? 'text-amber-600 font-semibold' : 'text-gray-600'}`}
+      data-testid="timer"
+      aria-live="polite"
+    >
       {remaining}s
     </div>
   )

@@ -30,6 +30,14 @@ test('timer expiry on the last item completes the test', async () => {
   expect(onComplete).toHaveBeenCalledTimes(1)
 })
 
+test('global timer expiry completes the test', async () => {
+  const onComplete = vi.fn()
+  const longItems = [{ id: 'g1', type: 'mcq', prompt: 'Q1', options: ['a', 'b'], time_limit_s: 9999 }]
+  render(<Test attemptId="a1" items={longItems} onComplete={onComplete} />)
+  await act(async () => { vi.advanceTimersByTime(720_000 + 500) })
+  expect(onComplete).toHaveBeenCalledTimes(1)
+})
+
 test('a saved answer is persisted when the question timer expires', async () => {
   render(<Test attemptId="a1" items={items} onComplete={vi.fn()} />)
   await act(async () => {
