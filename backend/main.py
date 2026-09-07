@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import random
 import subprocess
 import threading
 from pathlib import Path
@@ -15,6 +17,7 @@ from models import Attempt, Response, Score
 from scoring.judge import warm_up
 from scoring.objective import score_section
 from scoring.pipeline import run_scoring_pipeline
+from selection import SelectionError, canonical_letter, option_permutations, select_items
 
 logger = logging.getLogger(__name__)
 
@@ -88,20 +91,35 @@ def on_startup() -> None:
 
 class CreateAttemptRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    item_ids: list[str] | None = None  # seed-only; ignored unless env flag set
 
 
 class CreateAttemptResponse(BaseModel):
     attempt_id: str
 
 
-@app.get("/api/items")
-def get_items():
-    return {"items": [{k: v for k, v in i.items() if k not in _ANSWER_KEY_FIELDS} for i in _ITEMS_BY_ID.values()]}
+def _resolve_selection(payload: CreateAttemptRequest, attempt_id: str) -> list[str]:
+    if payload.item_ids is not None:
+        if os.getenv("ASSESSMENT_ALLOW_FIXED_SELECTION") != "1":
+            raise HTTPException(status_code=400, detail="item_ids not accepted")
+        unknown = [i for i in payload.item_ids if i not in _ITEMS_BY_ID]
+        if unknown or not payload.item_ids:
+            raise HTTPException(status_code=400, detail="Unknown item id in fixed selection")
+        return list(payload.item_ids)
+    try:
+        rng = random.Random(attempt_id)
+        return select_items(_BANK_BY_SECTION, SELECTION_COUNTS, rng)
+    except SelectionError:
+        logger.exception("Item selection failed")
+        raise HTTPException(status_code=500, detail="Question bank misconfigured")
 
 
 @app.post("/api/attempts", response_model=CreateAttemptResponse)
 def create_attempt(payload: CreateAttemptRequest, session: SessionDep):
     attempt = Attempt(name=payload.name.strip())
+    attempt.item_ids = _resolve_selection(payload, attempt.id)
+    selected_items = [_ITEMS_BY_ID[i] for i in attempt.item_ids]
+    attempt.option_order = option_permutations(selected_items, random.Random(attempt.id + "opts"))
     session.add(attempt)
     session.commit()
     session.refresh(attempt)
