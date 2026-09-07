@@ -553,7 +553,7 @@
         "were issuing",
         "had issued"
       ],
-      "answer": "c"
+      "answer": "b"
     },
     {
       "id": "g38",
@@ -773,12 +773,12 @@
       "time_limit_s": 40,
       "prompt": "You can rely ___ us to keep you updated throughout the process.",
       "options": [
-        "on",
         "in",
+        "on",
         "to",
         "at"
       ],
-      "answer": "a"
+      "answer": "b"
     },
     {
       "id": "g53",
@@ -790,10 +790,10 @@
       "options": [
         "for",
         "at",
-        "to",
-        "with"
+        "with",
+        "to"
       ],
-      "answer": "c"
+      "answer": "d"
     },
     {
       "id": "g54",
@@ -803,12 +803,12 @@
       "time_limit_s": 40,
       "prompt": "We have credited the amount ___ your account.",
       "options": [
-        "on",
         "to",
+        "on",
         "in",
         "for"
       ],
-      "answer": "b"
+      "answer": "a"
     },
     {
       "id": "g55",
@@ -820,10 +820,10 @@
       "options": [
         "because",
         "by",
-        "from",
-        "due to"
+        "due to",
+        "from"
       ],
-      "answer": "d"
+      "answer": "c"
     },
     {
       "id": "g56",
@@ -833,12 +833,12 @@
       "time_limit_s": 40,
       "prompt": "I have forwarded your complaint ___ the relevant department.",
       "options": [
-        "to",
         "at",
         "for",
-        "with"
+        "with",
+        "to"
       ],
-      "answer": "a"
+      "answer": "d"
     },
     {
       "id": "g57",
@@ -848,12 +848,12 @@
       "time_limit_s": 40,
       "prompt": "Please get back ___ me if the replacement does not arrive by Friday.",
       "options": [
+        "to",
         "at",
         "with",
-        "to",
         "for"
       ],
-      "answer": "c"
+      "answer": "a"
     },
     {
       "id": "g58",
@@ -864,11 +864,11 @@
       "prompt": "The warranty protects you ___ manufacturing defects for two years.",
       "options": [
         "for",
-        "against",
         "of",
+        "against",
         "on"
       ],
-      "answer": "b"
+      "answer": "c"
     },
     {
       "id": "g59",
@@ -879,11 +879,11 @@
       "prompt": "We will process your request ___ receipt of the signed form.",
       "options": [
         "at",
+        "upon",
         "since",
-        "after that",
-        "upon"
+        "after that"
       ],
-      "answer": "d"
+      "answer": "b"
     },
     {
       "id": "g60",
@@ -893,12 +893,12 @@
       "time_limit_s": 40,
       "prompt": "I'll pass your comments ___ to the design team today.",
       "options": [
-        "on",
         "over",
         "up",
-        "into"
+        "into",
+        "on"
       ],
-      "answer": "a"
+      "answer": "d"
     },
     {
       "id": "g61",
@@ -908,12 +908,12 @@
       "time_limit_s": 40,
       "prompt": "There is no additional cost ___ the standard membership fee.",
       "options": [
+        "beyond",
         "over",
         "across",
-        "beyond",
         "within"
       ],
-      "answer": "c"
+      "answer": "a"
     },
     {
       "id": "g62",
