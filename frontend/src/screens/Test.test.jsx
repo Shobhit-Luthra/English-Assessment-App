@@ -34,8 +34,16 @@ test('global timer expiry completes the test', async () => {
   const onComplete = vi.fn()
   const longItems = [{ id: 'g1', type: 'mcq', prompt: 'Q1', options: ['a', 'b'], time_limit_s: 9999 }]
   render(<Test attemptId="a1" items={longItems} onComplete={onComplete} />)
-  await act(async () => { vi.advanceTimersByTime(720_000 + 500) })
+  await act(async () => { vi.advanceTimersByTime(840_000 + 500) })
   expect(onComplete).toHaveBeenCalledTimes(1)
+})
+
+test('restores a saved writing answer into the textarea on mount', async () => {
+  const writingItems = [
+    { id: 'w1', type: 'text', prompt: 'Write', word_target: 100, time_limit_s: 180, response_text: 'Dear customer' },
+  ]
+  render(<Test attemptId="a1" items={writingItems} onComplete={vi.fn()} />)
+  expect(screen.getByRole('textbox')).toHaveValue('Dear customer')
 })
 
 test('a saved answer is persisted when the question timer expires', async () => {

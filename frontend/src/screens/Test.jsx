@@ -8,11 +8,21 @@ import { submitResponse, uploadAudio } from '../api'
 import { saveSession } from '../session'
 
 const SPEAKING_TYPES = new Set(['read_aloud', 'situational'])
-const GLOBAL_LIMIT_S = 720
+const GLOBAL_LIMIT_S = 840
 
 export default function Test({ attemptId, items, onComplete, initialIndex = 0 }) {
   const [index, setIndex] = useState(initialIndex)
-  const [answers, setAnswers] = useState({})
+  // Seed from the candidate's own saved answers so a resume-after-refresh
+  // restores the writing textarea. MCQ is excluded: the stored value is the
+  // canonical letter, which would highlight the wrong shuffled option (spec
+  // Section 9).
+  const [answers, setAnswers] = useState(() =>
+    Object.fromEntries(
+      items
+        .filter((i) => i.type !== 'mcq' && i.response_text != null)
+        .map((i) => [i.id, i.response_text]),
+    ),
+  )
   const [error, setError] = useState(null)
   const globalFiredRef = useRef(false)
 

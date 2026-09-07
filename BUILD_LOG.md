@@ -73,6 +73,26 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
 - **Section progress bar** and **resume-after-refresh** in the candidate flow.
 - `seed_attempts.py` now pins its fixed 9-item set (`g1..s2`) via the env-gated hook: the backend must be started with `ASSESSMENT_ALLOW_FIXED_SELECTION=1` (off by default, dev-only) for `item_ids` to be honoured; otherwise the request is rejected with HTTP 400. Because option order is shuffled per attempt, the seed reads back the served items and resolves each canonical answer to its display-position letter before posting. `seed_audio.ps1` only synthesises `.wav` files and was unchanged.
 
+### Day 4 — post-review fixes (whole-branch review)
+
+- **Listening timer vs clip length**: `l1`/`l2` were capped at 60s, shorter than
+  the ~33s/~38s clips once you add answering time. Corrected to *clip length +
+  60s* (`l1` 95s, `l2` 100s), matching the spec's §3 rule. The global test
+  timer was raised 12 → **14 minutes** (`GLOBAL_LIMIT_S` 720 → 840) to keep
+  headroom over the new per-item budget.
+- **Schema guard**: the `Attempt` table gained `item_ids`/`option_order` on Day 4;
+  `init_db()` now refuses to start if a pre-existing `backend/demo.db` still has
+  the old `attempt` shape. Delete `backend/demo.db` and re-seed after pulling.
+- **Timer accessibility**: the visible countdown no longer carries `aria-live`
+  (it announced every second). A separate visually-hidden region announces only
+  at 60/30/10/0-second thresholds.
+- **Bank drift**: `get_attempt_items` / `submit_response` / `submit_attempt` now
+  return HTTP 409 (not a 500/KeyError) if an attempt references an id that has
+  left `bank.json`.
+- **Resume restores writing**: `GET .../items` now includes the candidate's own
+  `response_text` for writing items and `Test.jsx` seeds the textarea from it.
+  MCQ selections are still not restored (canonical letter vs per-attempt shuffle).
+
 ### Limitations card (T3.12 content - demo PRD §10)
 
 - Scores are **not** validated against human raters - that's the Phase 4 study, n = 200.
@@ -83,8 +103,8 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
 ### Day 4 — verification
 
 **Test suite results:**
-- Backend (pytest): 26 passed, 4 warnings (deprecation notices for on_event, starlette, httpx compatibility)
-- Frontend (vitest): 19 tests passed across 6 test files
+- Backend (pytest): 26 passed, 4 warnings (deprecation notices for on_event, starlette, httpx compatibility); after the post-review fixes: 31 passed
+- Frontend (vitest): 19 tests passed across 6 test files; after the post-review fixes: 22 passed
 - Lint (oxlint): clean, no issues
 - Build (vite): successful, 496.69 kB JS (gzip 151 kB), dist ready
 

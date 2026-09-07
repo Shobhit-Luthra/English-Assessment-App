@@ -99,3 +99,26 @@ def test_get_attempt_items_409_after_submit(client):
 
 def test_old_items_endpoint_is_gone(client):
     assert client.get("/api/items").status_code == 404
+
+
+def test_get_attempt_items_409_when_an_item_left_the_bank(client, monkeypatch):
+    attempt_id = client.post("/api/attempts", json={"name": "Ada"}).json()["attempt_id"]
+    with Session(client._engine) as session:
+        dropped = session.get(Attempt, attempt_id).item_ids[0]
+    trimmed = {k: v for k, v in main._ITEMS_BY_ID.items() if k != dropped}
+    monkeypatch.setattr(main, "_ITEMS_BY_ID", trimmed)
+    assert client.get(f"/api/attempts/{attempt_id}/items").status_code == 409
+
+
+def test_get_attempt_items_includes_saved_writing_answer(client, monkeypatch):
+    monkeypatch.setenv("ASSESSMENT_ALLOW_FIXED_SELECTION", "1")
+    ids = ["g1", "g2", "g3", "g4", "l1", "l2", "w1", "s1", "s2"]
+    attempt_id = client.post("/api/attempts", json={"name": "Seed", "item_ids": ids}).json()["attempt_id"]
+    essay = "Dear customer, I am sorry about the delay."
+    client.post(f"/api/attempts/{attempt_id}/response", json={"item_id": "w1", "text": essay})
+
+    items = client.get(f"/api/attempts/{attempt_id}/items").json()["items"]
+    by_id = {i["id"]: i for i in items}
+    assert by_id["w1"]["response_text"] == essay
+    # mcq answers are never echoed back (canonical letter != shuffled position)
+    assert "response_text" not in by_id["g1"]

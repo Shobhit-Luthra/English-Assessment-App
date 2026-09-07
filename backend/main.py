@@ -140,17 +140,39 @@ def _get_attempt_or_404(session: Session, attempt_id: str) -> Attempt:
     return attempt
 
 
+def _lookup_item(item_id: str) -> dict:
+    """Resolve an id stored on an attempt against the loaded bank. The bank
+    can change under a live attempt (an item pulled from bank.json between
+    attempt creation and scoring); surface that as a 409 rather than a 500."""
+    item = _ITEMS_BY_ID.get(item_id)
+    if item is None:
+        logger.warning("attempt references item '%s' that is no longer in the bank", item_id)
+        raise HTTPException(
+            status_code=409, detail="This attempt's item set is no longer valid"
+        )
+    return item
+
+
 @app.get("/api/attempts/{attempt_id}/items")
 def get_attempt_items(attempt_id: str, session: SessionDep):
     attempt = _get_attempt_or_404(session, attempt_id)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
-    return {
-        "items": [
-            _public_item(_ITEMS_BY_ID[item_id], attempt.option_order.get(item_id))
-            for item_id in attempt.item_ids
-        ]
-    }
+    responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
+    text_by_item = {r.item_id: r.text for r in responses if r.text is not None}
+
+    items = []
+    for item_id in attempt.item_ids:
+        item = _lookup_item(item_id)
+        public = _public_item(item, attempt.option_order.get(item_id))
+        # The candidate's own saved answer (their essay text), so a resume
+        # after refresh restores the textarea. Not sent for mcq (stored value
+        # is the canonical letter, not the shuffled display position) and not
+        # for speaking (those are audio).
+        if item["type"] == "text" and item_id in text_by_item:
+            public["response_text"] = text_by_item[item_id]
+        items.append(public)
+    return {"items": items}
 
 
 class SubmitResponseRequest(BaseModel):
@@ -167,7 +189,7 @@ def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: Se
         raise HTTPException(status_code=400, detail="Item not in this attempt")
 
     text = payload.text
-    item = _ITEMS_BY_ID[payload.item_id]
+    item = _lookup_item(payload.item_id)
     if item["type"] == "mcq":
         permutation = attempt.option_order.get(payload.item_id)
         given = text.strip().lower()
@@ -263,7 +285,7 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
 
     attempt_items_by_section: dict[str, list[dict]] = {}
     for item_id in attempt.item_ids:
-        item = _ITEMS_BY_ID[item_id]
+        item = _lookup_item(item_id)
         attempt_items_by_section.setdefault(item["section"], []).append(item)
 
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()

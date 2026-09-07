@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 
+// Announce only at these thresholds - an aria-live region on the visible
+// countdown would make a screen reader read every single second.
+const THRESHOLD_MESSAGES = {
+  60: '1 minute remaining',
+  30: '30 seconds remaining',
+  10: '10 seconds remaining',
+  0: 'Time is up',
+}
+
 export default function Timer({ seconds, onExpire, itemKey }) {
   const [remaining, setRemaining] = useState(seconds)
   const onExpireRef = useRef(onExpire)
@@ -25,12 +34,16 @@ export default function Timer({ seconds, onExpire, itemKey }) {
 
   const low = remaining <= 10
   return (
-    <div
-      className={`text-sm font-mono tabular-nums ${low ? 'text-amber-600 font-semibold' : 'text-gray-600'}`}
-      data-testid="timer"
-      aria-live="polite"
-    >
-      {remaining}s
-    </div>
+    <>
+      <div
+        className={`text-sm font-mono tabular-nums ${low ? 'text-amber-600 font-semibold' : 'text-gray-600'}`}
+        data-testid="timer"
+      >
+        {remaining}s
+      </div>
+      <span className="sr-only" aria-live="polite" data-testid="timer-announce">
+        {THRESHOLD_MESSAGES[remaining] || ''}
+      </span>
+    </>
   )
 }

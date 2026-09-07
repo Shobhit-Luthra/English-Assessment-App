@@ -33,8 +33,10 @@ breakdowns. These are noted as possible follow-ups, not built.
 | Writing   | 1     | uniform random from ~30 prompts |
 | Speaking  | 2     | 1 read-aloud + 1 situational, uniform random from ~10 each |
 
-Total 10 items. Global test timer: **12 minutes** (PRD target is "under 10";
-the extra 2 min is slack for the added grammar item and reading time).
+Total 10 items. Global test timer: **14 minutes** (PRD target is "under 10";
+the extra time is slack for the added grammar item, reading time, and the
+listening clips). Listening items get `clip length + 60s` (see §3), not a
+flat 60s.
 
 ---
 
@@ -163,7 +165,8 @@ of the speaking prompt does not threaten D2. Documented in §11.
   from `item.time_limit_s`. On expire: persist the current answer (if any) via
   the existing `submitResponse`, then advance; last item → `onComplete()`. No
   return to a prior item.
-- **Global timer:** a 12-minute countdown in the `Test` header, independent of
+- **Global timer:** a 14-minute (`GLOBAL_LIMIT_S = 840`) countdown in the
+  `Test` header, independent of
   item changes. On expiry → immediately call `onComplete()` (submit what
   exists). Lives in `Test.jsx` state, started when the test screen mounts.
 - `Timer.jsx`: add an amber visual state under 10 seconds remaining. Existing
@@ -189,7 +192,13 @@ navigation, matching current behaviour).
   prior answers are already saved; only navigation state is restored.
 - Clear the key on reaching the report screen, on a fresh Start, or when the
   stored attempt returns 404 / 409 (already submitted).
-- Global timer after resume: restart from full 12 min (we do not persist test
+- `GET /api/attempts/{id}/items` returns the candidate's own saved
+  `response_text` for writing items, and `Test.jsx` seeds its `answers` state
+  from it, so a refresh mid-essay restores the textarea. MCQ selections are
+  **not** restored: the stored value is the canonical letter and the UI shows
+  a per-attempt shuffle, so re-highlighting would point at the wrong option.
+  Re-selecting an MCQ on resume is accepted.
+- Global timer after resume: restart from full 14 min (we do not persist test
   start time). Accepted — resume is an accident-recovery path, not a way to
   pause.
 

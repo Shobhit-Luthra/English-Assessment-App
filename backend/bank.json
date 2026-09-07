@@ -1204,7 +1204,7 @@
       "id": "l1",
       "section": "listening",
       "type": "mcq",
-      "time_limit_s": 60,
+      "time_limit_s": 95,
       "audio": "/static/listening/call1.wav",
       "prompt": "What is the customer calling about?",
       "options": [
@@ -1219,7 +1219,7 @@
       "id": "l2",
       "section": "listening",
       "type": "mcq",
-      "time_limit_s": 60,
+      "time_limit_s": 100,
       "audio": "/static/listening/call2.wav",
       "prompt": "What does the representative offer to resolve the issue?",
       "options": [
