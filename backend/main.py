@@ -126,9 +126,11 @@ def create_attempt(payload: CreateAttemptRequest, session: SessionDep):
     return CreateAttemptResponse(attempt_id=attempt.id)
 
 
-class SubmitResponseRequest(BaseModel):
-    item_id: str
-    text: str = Field(max_length=5000)
+def _public_item(item: dict, permutation: list[int] | None) -> dict:
+    public = {k: v for k, v in item.items() if k not in _ANSWER_KEY_FIELDS}
+    if permutation is not None and "options" in public:
+        public["options"] = [item["options"][idx] for idx in permutation]
+    return public
 
 
 def _get_attempt_or_404(session: Session, attempt_id: str) -> Attempt:
@@ -136,6 +138,24 @@ def _get_attempt_or_404(session: Session, attempt_id: str) -> Attempt:
     if attempt is None:
         raise HTTPException(status_code=404, detail="Attempt not found")
     return attempt
+
+
+@app.get("/api/attempts/{attempt_id}/items")
+def get_attempt_items(attempt_id: str, session: SessionDep):
+    attempt = _get_attempt_or_404(session, attempt_id)
+    if attempt.status != "in_progress":
+        raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
+    return {
+        "items": [
+            _public_item(_ITEMS_BY_ID[item_id], attempt.option_order.get(item_id))
+            for item_id in attempt.item_ids
+        ]
+    }
+
+
+class SubmitResponseRequest(BaseModel):
+    item_id: str
+    text: str = Field(max_length=5000)
 
 
 @app.post("/api/attempts/{attempt_id}/response")
