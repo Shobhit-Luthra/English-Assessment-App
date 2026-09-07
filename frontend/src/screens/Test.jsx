@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import McqItem from '../components/McqItem'
+import Progress from '../components/Progress'
 import SpeakingItem from '../components/SpeakingItem'
 import Timer from '../components/Timer'
 import WritingItem from '../components/WritingItem'
@@ -66,6 +67,7 @@ export default function Test({ attemptId, items, onComplete }) {
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-6 p-6">
+      <Progress items={items} index={index} />
       <div className="flex items-center justify-between text-sm text-gray-500">
         <span>
           Item {index + 1} of {items.length}
