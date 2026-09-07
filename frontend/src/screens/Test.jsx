@@ -25,6 +25,15 @@ export default function Test({ attemptId, items, onComplete }) {
     }
   }
 
+  const handleTimerExpire = () => {
+    const pending = answers[item.id]
+    if (pending !== undefined && !isSpeaking) {
+      // fire-and-forget: never block the advance on a slow save
+      submitResponse(attemptId, item.id, pending).catch(() => {})
+    }
+    goNext()
+  }
+
   const handleAnswer = async (value) => {
     setAnswers((prev) => ({ ...prev, [item.id]: value }))
     try {
@@ -54,7 +63,7 @@ export default function Test({ attemptId, items, onComplete }) {
           Item {index + 1} of {items.length}
         </span>
         {!isSpeaking && item.time_limit_s && (
-          <Timer seconds={item.time_limit_s} itemKey={item.id} onExpire={goNext} />
+          <Timer seconds={item.time_limit_s} itemKey={item.id} onExpire={handleTimerExpire} />
         )}
       </div>
 
