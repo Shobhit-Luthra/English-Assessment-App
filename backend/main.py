@@ -163,8 +163,16 @@ def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: Se
     attempt = _get_attempt_or_404(session, attempt_id)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
-    if payload.item_id not in _ITEM_IDS:
-        raise HTTPException(status_code=400, detail="Unknown item_id")
+    if payload.item_id not in attempt.item_ids:
+        raise HTTPException(status_code=400, detail="Item not in this attempt")
+
+    text = payload.text
+    item = _ITEMS_BY_ID[payload.item_id]
+    if item["type"] == "mcq":
+        permutation = attempt.option_order.get(payload.item_id)
+        given = text.strip().lower()
+        if permutation is not None and given in ("a", "b", "c", "d", "e", "f")[: len(permutation)]:
+            text = canonical_letter(given, permutation)
 
     existing = session.exec(
         select(Response).where(
@@ -174,10 +182,10 @@ def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: Se
     ).first()
 
     if existing:
-        existing.text = payload.text
+        existing.text = text
         session.add(existing)
     else:
-        session.add(Response(attempt_id=attempt_id, item_id=payload.item_id, text=payload.text))
+        session.add(Response(attempt_id=attempt_id, item_id=payload.item_id, text=text))
 
     session.commit()
     return {"ok": True}
@@ -202,8 +210,8 @@ async def upload_audio(
     attempt = _get_attempt_or_404(session, attempt_id)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
-    if item_id not in _ITEM_IDS:
-        raise HTTPException(status_code=400, detail="Unknown item_id")
+    if item_id not in attempt.item_ids:
+        raise HTTPException(status_code=400, detail="Item not in this attempt")
 
     ext = _ALLOWED_AUDIO_TYPES.get(file.content_type)
     if ext is None:
