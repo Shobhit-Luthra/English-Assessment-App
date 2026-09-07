@@ -15,6 +15,8 @@ class Attempt(SQLModel, table=True):
     status: str = Field(default="in_progress")  # in_progress | scoring | done | error
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
+    item_ids: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    option_order: dict[str, list[int]] = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class Response(SQLModel, table=True):

@@ -19,8 +19,10 @@ from scoring.pipeline import run_scoring_pipeline
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).parent
-ITEMS_PATH = BASE_DIR / "items.json"
+BANK_PATH = BASE_DIR / "bank.json"
 AUDIO_DIR = BASE_DIR / "audio"
+
+SELECTION_COUNTS: dict[str, int] = {"grammar": 5, "listening": 2, "writing": 1, "speaking": 2}
 
 # Only these are accepted from MediaRecorder in the two browsers we target
 # (Chrome -> webm/opus, Safari -> mp4/aac). Anything else is rejected before
@@ -40,15 +42,33 @@ app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-_ITEM_IDS: set[str] = set()
-_ITEMS_PUBLIC: dict = {}
-_ITEMS_BY_SECTION: dict[str, list[dict]] = {}
-_ITEMS_BY_ID: dict[str, dict] = {}
-
 # Fields never sent to the client while a test is in progress - "answer" is
 # the MCQ answer key; leaking it lets a candidate read it from the network
 # tab and always score 100%.
 _ANSWER_KEY_FIELDS = {"answer"}
+
+_ITEMS_BY_ID: dict[str, dict] = {}
+_BANK_BY_SECTION: dict[str, list[dict]] = {}
+
+
+def _load_bank() -> None:
+    items = json.loads(BANK_PATH.read_text(encoding="utf-8"))["items"]
+    _ITEMS_BY_ID.clear()
+    _BANK_BY_SECTION.clear()
+    for item in items:
+        _ITEMS_BY_ID[item["id"]] = item
+        _BANK_BY_SECTION.setdefault(item["section"], []).append(item)
+    for section, count in SELECTION_COUNTS.items():
+        pool = _BANK_BY_SECTION.get(section, [])
+        if len(pool) < count:
+            raise RuntimeError(
+                f"bank.json section '{section}' has {len(pool)} items, needs at least {count}"
+            )
+    speaking_types = {i["type"] for i in _BANK_BY_SECTION.get("speaking", [])}
+    if "read_aloud" not in speaking_types or "situational" not in speaking_types:
+        raise RuntimeError(
+            "bank.json speaking section must contain at least one 'read_aloud' and one 'situational' item"
+        )
 
 
 def _warm_up_judge_in_background() -> None:
@@ -61,16 +81,9 @@ def _warm_up_judge_in_background() -> None:
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
-    items = json.loads(ITEMS_PATH.read_text(encoding="utf-8"))["items"]
-    _ITEM_IDS.update(item["id"] for item in items)
-    _ITEMS_PUBLIC["items"] = [
-        {k: v for k, v in item.items() if k not in _ANSWER_KEY_FIELDS} for item in items
-    ]
+    _load_bank()
     # Fire-and-forget: don't block server startup on Ollama being ready.
     threading.Thread(target=_warm_up_judge_in_background, daemon=True).start()
-    for item in items:
-        _ITEMS_BY_SECTION.setdefault(item["section"], []).append(item)
-        _ITEMS_BY_ID[item["id"]] = item
 
 
 class CreateAttemptRequest(BaseModel):
@@ -83,7 +96,7 @@ class CreateAttemptResponse(BaseModel):
 
 @app.get("/api/items")
 def get_items():
-    return _ITEMS_PUBLIC
+    return {"items": [{k: v for k, v in i.items() if k not in _ANSWER_KEY_FIELDS} for i in _ITEMS_BY_ID.values()]}
 
 
 @app.post("/api/attempts", response_model=CreateAttemptResponse)
