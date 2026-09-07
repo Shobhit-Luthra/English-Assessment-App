@@ -1,19 +1,24 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import McqItem from '../components/McqItem'
 import Progress from '../components/Progress'
 import SpeakingItem from '../components/SpeakingItem'
 import Timer from '../components/Timer'
 import WritingItem from '../components/WritingItem'
 import { submitResponse, uploadAudio } from '../api'
+import { saveSession } from '../session'
 
 const SPEAKING_TYPES = new Set(['read_aloud', 'situational'])
 const GLOBAL_LIMIT_S = 720
 
-export default function Test({ attemptId, items, onComplete }) {
-  const [index, setIndex] = useState(0)
+export default function Test({ attemptId, items, onComplete, initialIndex = 0 }) {
+  const [index, setIndex] = useState(initialIndex)
   const [answers, setAnswers] = useState({})
   const [error, setError] = useState(null)
   const globalFiredRef = useRef(false)
+
+  useEffect(() => {
+    saveSession({ attemptId, index })
+  }, [attemptId, index])
 
   const handleGlobalExpire = () => {
     if (globalFiredRef.current) return

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createAttempt, getAttemptItems, getReport, pollReport, submitAttempt } from './api'
+import { clearSession, loadSession } from './session'
 import DeviceCheck from './screens/DeviceCheck'
 import Recruiter from './screens/Recruiter'
 import Report from './screens/Report'
@@ -48,8 +49,30 @@ function CandidateApp() {
   const [items, setItems] = useState([])
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
+  const [initialIndex, setInitialIndex] = useState(0)
+
+  useEffect(() => {
+    const saved = loadSession()
+    if (!saved) return
+    let cancelled = false
+    getAttemptItems(saved.attemptId)
+      .then(({ items: fetchedItems }) => {
+        if (cancelled) return
+        setItems(fetchedItems)
+        setAttemptId(saved.attemptId)
+        setInitialIndex(Math.min(Math.max(0, saved.index ?? 0), fetchedItems.length - 1))
+        setScreen('test')
+      })
+      .catch(() => {
+        if (!cancelled) clearSession()
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleBegin = async (name) => {
+    clearSession()
     const { attempt_id } = await createAttempt(name)
     const { items: fetchedItems } = await getAttemptItems(attempt_id)
     setItems(fetchedItems)
@@ -64,6 +87,7 @@ function CandidateApp() {
       const fetchedReport = await pollReport(attemptId)
       setReport(fetchedReport)
       setScreen('report')
+      clearSession()
     } catch {
       setError('Could not score your attempt. Please try again.')
       setScreen('test')
@@ -76,7 +100,12 @@ function CandidateApp() {
       {screen === 'start' && <Start onBegin={handleBegin} />}
       {screen === 'check' && <DeviceCheck onConfirmed={() => setScreen('test')} />}
       {screen === 'test' && (
-        <Test attemptId={attemptId} items={items} onComplete={handleTestComplete} />
+        <Test
+          attemptId={attemptId}
+          items={items}
+          onComplete={handleTestComplete}
+          initialIndex={initialIndex}
+        />
       )}
       {screen === 'submitting' && <Submitting />}
       {screen === 'report' && report && <Report report={report} />}
