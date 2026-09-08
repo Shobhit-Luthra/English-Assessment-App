@@ -9,7 +9,15 @@ const THRESHOLD_MESSAGES = {
   0: 'Time is up',
 }
 
-export default function Timer({ seconds, onExpire, itemKey }) {
+const SIZES = {
+  sm: { box: 44, stroke: 4, font: 'text-xs' },
+  md: { box: 72, stroke: 6, font: 'text-lg' },
+}
+
+// A circular countdown: an SVG ring that drains clockwise as time runs out,
+// with the seconds remaining in the centre. `size` is "sm" (inline, on the
+// question) or "md" (the standalone global timer, pinned top-right).
+export default function Timer({ seconds, onExpire, itemKey, size = 'sm', label }) {
   const [remaining, setRemaining] = useState(seconds)
   const onExpireRef = useRef(onExpire)
   onExpireRef.current = onExpire
@@ -33,13 +41,46 @@ export default function Timer({ seconds, onExpire, itemKey }) {
   }, [seconds, itemKey])
 
   const low = remaining <= 10
+  const { box, stroke, font } = SIZES[size] || SIZES.sm
+  const radius = (box - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const fraction = seconds > 0 ? Math.max(0, Math.min(1, remaining / seconds)) : 0
+
   return (
     <>
       <div
-        className={`text-sm font-mono tabular-nums ${low ? 'text-amber-600 font-semibold' : 'text-gray-600'}`}
+        className={`relative inline-flex items-center justify-center tabular-nums ${
+          low ? 'text-amber-600' : 'text-gray-700'
+        }`}
+        style={{ width: box, height: box }}
         data-testid="timer"
+        title={label}
       >
-        {remaining}s
+        <svg width={box} height={box} className="-rotate-90" aria-hidden="true">
+          <circle
+            cx={box / 2}
+            cy={box / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            className="text-gray-200"
+          />
+          <circle
+            cx={box / 2}
+            cy={box / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - fraction)}
+            className={low ? 'text-amber-500' : 'text-purple-600'}
+            style={{ transition: 'stroke-dashoffset 0.2s linear' }}
+          />
+        </svg>
+        <span className={`absolute font-mono font-semibold ${font}`}>{remaining}</span>
       </div>
       <span className="sr-only" aria-live="polite" data-testid="timer-announce">
         {THRESHOLD_MESSAGES[remaining] || ''}

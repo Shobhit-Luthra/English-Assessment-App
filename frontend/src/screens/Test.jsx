@@ -82,18 +82,35 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-6 p-6">
+      {/* Global test timer: a standalone circle pinned to the top-right. */}
+      <div className="fixed top-4 right-4 z-10 flex flex-col items-center gap-1 rounded-xl bg-white/90 p-2 shadow-sm backdrop-blur">
+        <Timer
+          seconds={GLOBAL_LIMIT_S}
+          itemKey="global"
+          onExpire={handleGlobalExpire}
+          size="md"
+          label="Time left in the whole test"
+        />
+        <span className="text-[10px] uppercase tracking-wide text-gray-400">Test</span>
+      </div>
+
       <Progress items={items} index={index} />
       <div className="flex items-center justify-between text-sm text-gray-500">
         <span>
           Item {index + 1} of {items.length}
         </span>
-        <div className="flex items-center gap-4">
-          <span className="text-gray-400">Test</span>
-          <Timer seconds={GLOBAL_LIMIT_S} itemKey="global" onExpire={handleGlobalExpire} />
-          {!isSpeaking && item.time_limit_s && (
-            <Timer seconds={item.time_limit_s} itemKey={item.id} onExpire={handleTimerExpire} />
-          )}
-        </div>
+        {!isSpeaking && item.time_limit_s && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">This question</span>
+            <Timer
+              seconds={item.time_limit_s}
+              itemKey={item.id}
+              onExpire={handleTimerExpire}
+              size="sm"
+              label="Time left on this question"
+            />
+          </div>
+        )}
       </div>
 
       {item.type === 'mcq' && (

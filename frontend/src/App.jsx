@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createAttempt, getAttemptItems, getReport, pollReport, submitAttempt } from './api'
 import { clearSession, loadSession } from './session'
 import DeviceCheck from './screens/DeviceCheck'
@@ -48,8 +48,33 @@ function CandidateApp() {
   const [attemptId, setAttemptId] = useState(null)
   const [items, setItems] = useState([])
   const [report, setReport] = useState(null)
-  const [error, setError] = useState(null)
   const [initialIndex, setInitialIndex] = useState(0)
+  const [submitError, setSubmitError] = useState(null)
+  // Guards re-submission: once the attempt is submitted, retry only re-polls.
+  const submittedRef = useRef(false)
+
+  // Once we're past the last item the attempt can no longer take responses,
+  // so there is nothing to go "back" to. A slow or flaky score must not drop
+  // the candidate into a dead test screen - keep them on the submitting
+  // screen with a retry that re-polls.
+  const runScoring = async (id = attemptId) => {
+    setSubmitError(null)
+    setScreen('submitting')
+    try {
+      if (!submittedRef.current) {
+        await submitAttempt(id)
+        submittedRef.current = true
+      }
+      const fetchedReport = await pollReport(id)
+      setReport(fetchedReport)
+      setScreen('report')
+      clearSession()
+    } catch {
+      setSubmitError(
+        'Scoring is taking longer than expected. Your answers are saved - you can keep waiting.',
+      )
+    }
+  }
 
   useEffect(() => {
     const saved = loadSession()
@@ -63,8 +88,26 @@ function CandidateApp() {
         setInitialIndex(Math.min(Math.max(0, saved.index ?? 0), fetchedItems.length - 1))
         setScreen('test')
       })
-      .catch(() => {
-        if (!cancelled) clearSession()
+      .catch(async () => {
+        if (cancelled) return
+        // Items fetch 409s once the attempt has been submitted. If the
+        // candidate refreshed after finishing, recover the report/scoring
+        // state instead of dumping them back to the start screen.
+        try {
+          const recovered = await getReport(saved.attemptId)
+          if (cancelled) return
+          setAttemptId(saved.attemptId)
+          submittedRef.current = true
+          if (recovered.status === 'scoring') {
+            runScoring(saved.attemptId)
+          } else {
+            setReport(recovered)
+            setScreen('report')
+            clearSession()
+          }
+        } catch {
+          if (!cancelled) clearSession()
+        }
       })
     return () => {
       cancelled = true
@@ -73,6 +116,7 @@ function CandidateApp() {
 
   const handleBegin = async (name) => {
     clearSession()
+    submittedRef.current = false
     const { attempt_id } = await createAttempt(name)
     const { items: fetchedItems } = await getAttemptItems(attempt_id)
     setItems(fetchedItems)
@@ -80,23 +124,12 @@ function CandidateApp() {
     setScreen('check')
   }
 
-  const handleTestComplete = async () => {
-    setScreen('submitting')
-    try {
-      await submitAttempt(attemptId)
-      const fetchedReport = await pollReport(attemptId)
-      setReport(fetchedReport)
-      setScreen('report')
-      clearSession()
-    } catch {
-      setError('Could not score your attempt. Please try again.')
-      setScreen('test')
-    }
+  const handleTestComplete = () => {
+    runScoring()
   }
 
   return (
     <main className="min-h-screen bg-gray-50 py-10">
-      {error && <p className="text-center text-sm text-red-600 mb-4">{error}</p>}
       {screen === 'start' && <Start onBegin={handleBegin} />}
       {screen === 'check' && <DeviceCheck onConfirmed={() => setScreen('test')} />}
       {screen === 'test' && (
@@ -107,7 +140,9 @@ function CandidateApp() {
           initialIndex={initialIndex}
         />
       )}
-      {screen === 'submitting' && <Submitting />}
+      {screen === 'submitting' && (
+        <Submitting error={submitError} onRetry={runScoring} />
+      )}
       {screen === 'report' && report && <Report report={report} />}
     </main>
   )

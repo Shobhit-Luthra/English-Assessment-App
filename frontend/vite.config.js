@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8000',
       '/static': 'http://localhost:8000',
+      '/audio': 'http://localhost:8000',
     },
     host: true,
   },

@@ -13,6 +13,13 @@ def _get_model() -> WhisperModel:
     return _model
 
 
+def warm_up() -> None:
+    """Instantiate the Whisper model at startup so the one-time weight
+    download (the "small" model is ~460 MB) is paid before the first real
+    submit, not while a candidate waits on the scoring screen."""
+    _get_model()
+
+
 def unload_model() -> None:
     """Release Whisper before the Ollama judge call - both compete for the
     same CPU/RAM, and running them concurrently causes swapping and

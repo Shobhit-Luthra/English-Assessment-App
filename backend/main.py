@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 
 from db import get_session, init_db
 from models import Attempt, Response, Score
+from scoring.asr import warm_up as warm_up_asr
 from scoring.judge import warm_up
 from scoring.objective import score_section
 from scoring.pipeline import run_scoring_pipeline
@@ -75,6 +76,10 @@ def _load_bank() -> None:
 
 
 def _warm_up_judge_in_background() -> None:
+    try:
+        warm_up_asr()
+    except Exception:  # noqa: BLE001 - startup warm-up is best-effort
+        logger.exception("Whisper warm-up failed; first real score will pay the model download")
     try:
         warm_up()
     except Exception:  # noqa: BLE001 - startup warm-up is best-effort

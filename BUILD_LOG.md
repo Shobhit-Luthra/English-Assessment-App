@@ -93,6 +93,33 @@ Tracks task completion against `03-build-plan.md`. One line per task once its ac
   `response_text` for writing items and `Test.jsx` seeds the textarea from it.
   MCQ selections are still not restored (canonical letter vs per-attempt shuffle).
 
+### Day 4 — post-review fixes wave 2 (submit/scoring robustness + circular timers)
+
+- **Scoring poll no longer strands a submitted attempt.** `App.jsx` used to
+  drop the candidate back onto the (now dead, response-locked) test screen when
+  `pollReport` threw. It now stays on the submitting screen with a "Check again"
+  retry that re-polls only (never re-submits, guarded by `submittedRef`). A
+  refresh mid-scoring is recovered: when `GET .../items` 409s, `App` falls back
+  to `GET .../report` and resumes the scoring/report view.
+- **Poll window widened** 90s → 300s and made tolerant of up to 4 consecutive
+  transient fetch failures. The old 90s cap routinely expired on the first
+  submit after a cold start, which is when the ~460 MB Whisper `small` model
+  downloads.
+- **Whisper is now warmed at startup** alongside the Ollama warm-up
+  (`scoring/asr.warm_up`, called from the existing startup background thread),
+  so the model download is paid before the first candidate submits.
+- **`/audio` added to the Vite dev proxy.** Report audio players
+  (`src="/audio/…"`) 404'd through the dev server because only `/api` and
+  `/static` were proxied.
+- **Timers are circular.** `Timer.jsx` renders an SVG progress ring with the
+  seconds in the centre; `size="md"` is the standalone global timer pinned
+  top-right of the test screen, `size="sm"` is the per-question timer shown
+  beside the question. Amber under-10s state and the threshold-only aria-live
+  announcements are unchanged.
+- Verified: backend `pytest` 31 passed; frontend `vitest` 22 passed; `oxlint`
+  clean; `vite build` clean; full HTTP end-to-end (create → responses → audio
+  upload → submit → poll → `done`) with `/audio` URLs returning 200.
+
 ### Limitations card (T3.12 content - demo PRD §10)
 
 - Scores are **not** validated against human raters - that's the Phase 4 study, n = 200.

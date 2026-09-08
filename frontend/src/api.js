@@ -49,14 +49,21 @@ export function getReport(attemptId) {
 }
 
 // Objective sections score synchronously, but audio transcription + the LLM
-// judge run in the background (~15-30s) - poll until the pipeline leaves
-// "scoring". Caps at ~90s so a stuck attempt surfaces as an error instead of
-// polling forever.
-export async function pollReport(attemptId, { intervalMs = 2000, timeoutMs = 90000 } = {}) {
+// judge run in the background - normally ~15-30s, but the first submit after a
+// cold start also pays a one-time Whisper model download, which can take
+// several minutes. Cap generously (5 min) and tolerate a few transient fetch
+// failures rather than aborting the whole attempt on one blip.
+export async function pollReport(attemptId, { intervalMs = 2000, timeoutMs = 300000 } = {}) {
   const deadline = Date.now() + timeoutMs
+  let consecutiveErrors = 0
   for (;;) {
-    const report = await getReport(attemptId)
-    if (report.status !== 'scoring') return report
+    try {
+      const report = await getReport(attemptId)
+      consecutiveErrors = 0
+      if (report.status !== 'scoring') return report
+    } catch (err) {
+      if (++consecutiveErrors >= 5) throw err
+    }
     if (Date.now() >= deadline) {
       throw new Error('Scoring is taking longer than expected.')
     }
