@@ -9,7 +9,10 @@ from sqlmodel import Session, select
 from db import get_session
 from models import CandidateProfile, Role, SessionToken, User
 from rbac import COOKIE_NAME, CurrentUser, user_permissions
-from security import hash_password, new_session_token
+from security import (
+    ThrottledError, check_login_allowed, hash_password, new_session_token,
+    record_login_failure, reset_login_failures, verify_password,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -82,6 +85,40 @@ def signup(payload: SignupRequest, request: Request, response: Response,
     session.add(user)
     session.commit()
     session.refresh(user)
+    token = _create_session(session, user.id)
+    _set_session_cookie(response, request, token)
+    return _me_payload(user, session)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def _lower(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+@router.post("/login")
+def login(payload: LoginRequest, request: Request, response: Response,
+          session: Session = Depends(get_session)):
+    client_ip = request.client.host if request.client else "?"
+    throttle_key = f"{payload.email}|{client_ip}"
+    try:
+        check_login_allowed(throttle_key)
+    except ThrottledError as exc:
+        raise HTTPException(
+            status_code=429, detail="Too many attempts. Try again later.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+
+    user = session.exec(select(User).where(User.email == payload.email)).first()
+    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        record_login_failure(throttle_key)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    reset_login_failures(throttle_key)
     token = _create_session(session, user.id)
     _set_session_cookie(response, request, token)
     return _me_payload(user, session)
