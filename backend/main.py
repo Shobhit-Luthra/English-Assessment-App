@@ -90,6 +90,14 @@ def _warm_up_judge_in_background() -> None:
 def on_startup() -> None:
     init_db()
     _load_bank()
+    from db import engine
+    from seed_auth import ensure_default_admin, seed_auth
+
+    # seed_auth commits several times internally, so give it a fresh session
+    # that shares no pending work with request handlers.
+    with Session(engine) as session:
+        seed_auth(session)
+        ensure_default_admin(session)
     # Fire-and-forget: don't block server startup on Ollama being ready.
     threading.Thread(target=_warm_up_judge_in_background, daemon=True).start()
 
