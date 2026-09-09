@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from db import get_session, init_db
 from models import Attempt, CandidateProfile, Response, Score
-from rbac import require
+from rbac import CurrentUser, require, user_permissions
 from scoring.asr import warm_up as warm_up_asr
 from scoring.judge import warm_up
 from scoring.objective import score_section
@@ -353,8 +353,12 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
 
 
 @app.get("/api/attempts/{attempt_id}/report")
-def get_report(attempt_id: str, session: SessionDep):
+def get_report(attempt_id: str, session: SessionDep, user: CurrentUser):
     attempt = _get_attempt_or_404(session, attempt_id)
+    perms = user_permissions(user, session)
+    is_owner = attempt.user_id == user.id
+    if not ("candidates.view" in perms or (is_owner and "report.view_own" in perms)):
+        raise HTTPException(status_code=403, detail="Not allowed")
     scores = session.exec(select(Score).where(Score.attempt_id == attempt_id)).all()
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
     audio_by_item = {r.item_id: r.audio_path for r in responses if r.audio_path}
@@ -387,9 +391,10 @@ def get_report(attempt_id: str, session: SessionDep):
 
 
 @app.get("/api/attempts")
-def list_attempts(session: SessionDep):
+def list_attempts(session: SessionDep, user=Depends(require("candidates.view"))):
     attempts = session.exec(select(Attempt)).all()
     return [
-        {"attempt_id": a.id, "name": a.name, "status": a.status, "created_at": a.created_at}
+        {"attempt_id": a.id, "name": a.name, "status": a.status,
+         "created_at": a.created_at, "user_id": a.user_id}
         for a in attempts
     ]
