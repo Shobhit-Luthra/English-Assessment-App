@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from db import get_session, init_db
-from models import Attempt, Response, Score
+from models import Attempt, CandidateProfile, Response, Score
+from rbac import require
 from scoring.asr import warm_up as warm_up_asr
 from scoring.judge import warm_up
 from scoring.objective import score_section
@@ -109,7 +110,6 @@ def on_startup() -> None:
 
 
 class CreateAttemptRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
     item_ids: list[str] | None = None  # seed-only; ignored unless env flag set
 
 
@@ -134,8 +134,12 @@ def _resolve_selection(payload: CreateAttemptRequest, attempt_id: str) -> list[s
 
 
 @app.post("/api/attempts", response_model=CreateAttemptResponse)
-def create_attempt(payload: CreateAttemptRequest, session: SessionDep):
-    attempt = Attempt(name=payload.name.strip())
+def create_attempt(payload: CreateAttemptRequest, session: SessionDep,
+                   user=Depends(require("test.take"))):
+    profile = session.get(CandidateProfile, user.id)
+    if profile is None:
+        raise HTTPException(status_code=409, detail="Complete your profile first")
+    attempt = Attempt(name=profile.full_name, user_id=user.id)
     attempt.item_ids = _resolve_selection(payload, attempt.id)
     selected_items = [_ITEMS_BY_ID[i] for i in attempt.item_ids]
     attempt.option_order = option_permutations(selected_items, random.Random(attempt.id + "opts"))

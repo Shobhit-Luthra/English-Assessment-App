@@ -90,3 +90,21 @@ def make_user(session, *, email, password, role_name, with_profile=False):
 def login(api, email, password):
     r = api.post("/api/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
+
+
+def authenticate_candidate(client, email="fixture-cand@x.com"):
+    """Seed the auth tables on this client's engine and log in as a candidate
+    with a completed profile. Legacy attempt/response/scoring tests use their
+    own local ``client`` fixture; since attempt creation is now gated behind
+    ``test.take`` + a profile, they call this once to obtain a valid session
+    cookie."""
+    import seed_auth
+
+    with Session(client._engine) as s:
+        seed_auth.seed_auth(s)
+    r = client.post("/api/auth/signup", json={
+        "email": email, "password": "longenough12", "display_name": "Fixture Cand",
+    })
+    assert r.status_code == 200, r.text
+    client.put("/api/candidate/profile", json={"full_name": "Fixture Cand", "phone": "1"})
+    return client
