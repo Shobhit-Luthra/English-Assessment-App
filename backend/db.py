@@ -7,7 +7,7 @@ DB_PATH = Path(__file__).parent / "demo.db"
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 
 _MISSING_COLUMNS_MSG = (
-    "attempt table is missing the item_ids/option_order columns - delete "
+    "attempt table is missing the item_ids/option_order/user_id columns - delete "
     "backend/demo.db and restart to recreate the schema (dev DB holds only "
     "seeded/throwaway data)"
 )
@@ -23,7 +23,7 @@ def _assert_attempt_schema_current(bound_engine) -> None:
         return
     with bound_engine.connect() as conn:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(attempt)"))}
-    if "item_ids" not in cols or "option_order" not in cols:
+    if "item_ids" not in cols or "option_order" not in cols or "user_id" not in cols:
         raise RuntimeError(_MISSING_COLUMNS_MSG)
 
 
