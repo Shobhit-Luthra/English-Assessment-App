@@ -45,11 +45,13 @@ app = FastAPI(title="English Assessment Demo API")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
+from admin import router as admin_router  # noqa: E402
 from auth import router as auth_router  # noqa: E402
 from candidate import router as candidate_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(candidate_router)
+app.include_router(admin_router)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
