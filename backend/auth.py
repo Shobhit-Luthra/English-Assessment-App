@@ -19,6 +19,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _SESSION_TTL = timedelta(days=14)
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# A real argon2 hash to verify against when the email is unknown, so a
+# failed login costs the same whether or not the account exists (no
+# user-enumeration timing oracle).
+_DUMMY_HASH = hash_password("timing-equalisation-placeholder")
+
 
 class SignupRequest(BaseModel):
     email: str
@@ -92,7 +97,7 @@ def signup(payload: SignupRequest, request: Request, response: Response,
 
 class LoginRequest(BaseModel):
     email: str
-    password: str
+    password: str = Field(min_length=1, max_length=200)
 
     @field_validator("email")
     @classmethod
@@ -104,21 +109,31 @@ class LoginRequest(BaseModel):
 def login(payload: LoginRequest, request: Request, response: Response,
           session: Session = Depends(get_session)):
     client_ip = request.client.host if request.client else "?"
-    throttle_key = f"{payload.email}|{client_ip}"
-    try:
-        check_login_allowed(throttle_key)
-    except ThrottledError as exc:
-        raise HTTPException(
-            status_code=429, detail="Too many attempts. Try again later.",
-            headers={"Retry-After": str(exc.retry_after)},
-        )
+    # Two throttle scopes: one per (email, IP) so a single account under
+    # attack locks quickly, and one per IP so credential spraying across
+    # many emails from one host is also capped.
+    throttle_keys = [f"{payload.email}|{client_ip}", f"ip|{client_ip}"]
+    for key in throttle_keys:
+        try:
+            check_login_allowed(key)
+        except ThrottledError as exc:
+            raise HTTPException(
+                status_code=429, detail="Too many attempts. Try again later.",
+                headers={"Retry-After": str(exc.retry_after)},
+            )
 
     user = session.exec(select(User).where(User.email == payload.email)).first()
-    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
-        record_login_failure(throttle_key)
+    # Always run one argon2 verification so timing does not reveal whether
+    # the email exists.
+    stored_hash = user.password_hash if user is not None else _DUMMY_HASH
+    password_ok = verify_password(payload.password, stored_hash)
+    if user is None or not user.is_active or not password_ok:
+        for key in throttle_keys:
+            record_login_failure(key)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    reset_login_failures(throttle_key)
+    for key in throttle_keys:
+        reset_login_failures(key)
     token = _create_session(session, user.id)
     _set_session_cookie(response, request, token)
     return _me_payload(user, session)

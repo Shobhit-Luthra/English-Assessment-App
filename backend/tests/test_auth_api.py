@@ -81,3 +81,17 @@ def test_login_throttles_after_repeated_failure(api, monkeypatch):
     r = api.post("/api/auth/login", json={"email": "t@x.com", "password": "bad"})
     assert r.status_code == 429
     assert "Retry-After" in r.headers
+
+
+def test_login_throttles_per_ip_across_emails(api, monkeypatch):
+    monkeypatch.setattr(security, "_FAILURES", {})
+    monkeypatch.setattr(security, "MAX_FAILURES", 3)
+    for i in range(3):
+        api.post("/api/auth/login", json={"email": f"spray{i}@x.com", "password": "bad"})
+    r = api.post("/api/auth/login", json={"email": "spray-new@x.com", "password": "bad"})
+    assert r.status_code == 429
+
+
+def test_login_rejects_overlong_password(api):
+    r = api.post("/api/auth/login", json={"email": "x@y.com", "password": "z" * 500})
+    assert r.status_code == 422
