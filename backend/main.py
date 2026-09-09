@@ -163,6 +163,15 @@ def _get_attempt_or_404(session: Session, attempt_id: str) -> Attempt:
     return attempt
 
 
+def _require_own_attempt(session: Session, attempt_id: str, user) -> Attempt:
+    """Resolve an attempt that must belong to ``user``. Unknown and
+    not-owned collapse to the same 404 so ownership is not an oracle."""
+    attempt = session.get(Attempt, attempt_id)
+    if attempt is None or attempt.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    return attempt
+
+
 def _lookup_item(item_id: str) -> dict:
     """Resolve an id stored on an attempt against the loaded bank. The bank
     can change under a live attempt (an item pulled from bank.json between
@@ -177,8 +186,9 @@ def _lookup_item(item_id: str) -> dict:
 
 
 @app.get("/api/attempts/{attempt_id}/items")
-def get_attempt_items(attempt_id: str, session: SessionDep):
-    attempt = _get_attempt_or_404(session, attempt_id)
+def get_attempt_items(attempt_id: str, session: SessionDep,
+                      user=Depends(require("test.take"))):
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
@@ -204,8 +214,9 @@ class SubmitResponseRequest(BaseModel):
 
 
 @app.post("/api/attempts/{attempt_id}/response")
-def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: SessionDep):
-    attempt = _get_attempt_or_404(session, attempt_id)
+def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: SessionDep,
+                    user=Depends(require("test.take"))):
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     if payload.item_id not in attempt.item_ids:
@@ -251,8 +262,9 @@ async def upload_audio(
     session: SessionDep,
     item_id: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
+    user=Depends(require("test.take")),
 ):
-    attempt = _get_attempt_or_404(session, attempt_id)
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     if item_id not in attempt.item_ids:
@@ -301,8 +313,9 @@ async def upload_audio(
 
 
 @app.post("/api/attempts/{attempt_id}/submit")
-def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep):
-    attempt = _get_attempt_or_404(session, attempt_id)
+def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep,
+                   user=Depends(require("test.take"))):
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt already submitted")
 

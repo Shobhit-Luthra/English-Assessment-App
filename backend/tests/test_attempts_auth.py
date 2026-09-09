@@ -28,6 +28,21 @@ def test_create_attempt_stamps_user_and_name(api):
         assert a.user_id is not None
 
 
+def test_other_candidate_cannot_touch_my_attempt(api):
+    _candidate(api, "owner@x.com")
+    api.put("/api/candidate/profile", json={"full_name": "Owner", "phone": "1"})
+    attempt_id = api.post("/api/attempts", json={}).json()["attempt_id"]
+
+    api.cookies.clear()
+    _candidate(api, "intruder@x.com")
+    api.put("/api/candidate/profile", json={"full_name": "Intruder", "phone": "1"})
+
+    assert api.get(f"/api/attempts/{attempt_id}/items").status_code == 404
+    assert api.post(f"/api/attempts/{attempt_id}/response",
+                    json={"item_id": "g1", "text": "a"}).status_code == 404
+    assert api.post(f"/api/attempts/{attempt_id}/submit").status_code == 404
+
+
 def test_me_attempts_lists_only_own(api):
     _candidate(api, "own2@x.com")
     api.put("/api/candidate/profile", json={"full_name": "Own Er", "phone": "1"})
