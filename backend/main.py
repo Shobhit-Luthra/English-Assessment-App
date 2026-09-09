@@ -44,6 +44,10 @@ app = FastAPI(title="English Assessment Demo API")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
+from auth import router as auth_router  # noqa: E402
+
+app.include_router(auth_router)
+
 SessionDep = Annotated[Session, Depends(get_session)]
 
 # Fields never sent to the client while a test is in progress - "answer" is
