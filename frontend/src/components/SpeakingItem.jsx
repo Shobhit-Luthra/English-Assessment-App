@@ -7,7 +7,7 @@ import Timer from './Timer'
 export default function SpeakingItem({ item, onSubmitted }) {
   const [started, setStarted] = useState(false)
   const [error, setError] = useState(null)
-  const { isRecording, blob, start } = useRecorder()
+  const { isRecording, blob, start, stop } = useRecorder()
 
   const phase = !started ? 'prep' : isRecording || !blob ? 'recording' : 'review'
 
@@ -45,7 +45,15 @@ export default function SpeakingItem({ item, onSubmitted }) {
       {phase === 'recording' && (
         <div className="flex flex-col items-center gap-3">
           <p className="text-sm font-medium text-red-600">Recording...</p>
-          <Timer seconds={item.time_limit_s} itemKey={`${item.id}-rec`} onExpire={() => {}} />
+          <Timer seconds={item.time_limit_s} itemKey={`${item.id}-rec`} onExpire={stop} />
+          <button
+            type="button"
+            onClick={stop}
+            disabled={!isRecording}
+            className="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
+          >
+            Stop &amp; review
+          </button>
         </div>
       )}
 
