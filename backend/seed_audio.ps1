@@ -1,5 +1,6 @@
 Add-Type -AssemblyName System.Speech
-$dir = "C:\Users\luthr\OneDrive\Documents\Projects\English Assesment System\backend\seed_audio"
+# Keep the generated clips inside the repo regardless of which machine runs this.
+$dir = Join-Path $PSScriptRoot "seed_audio"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
 function New-Speech($ssml, $outPath) {
