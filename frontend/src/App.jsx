@@ -1,155 +1,92 @@
-import { useEffect, useRef, useState } from 'react'
-import { createAttempt, getAttemptItems, getReport, pollReport, submitAttempt } from './api'
-import { clearSession, loadSession } from './session'
-import DeviceCheck from './screens/DeviceCheck'
+import { useEffect, useState } from 'react'
+import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { getReport } from './api'
+import { AuthProvider, useAuth } from './auth/AuthContext'
+import RequireAuth from './auth/RequireAuth'
+import AppShell from './components/AppShell'
+import CandidateFlow from './flows/CandidateFlow'
+import Admin from './screens/Admin'
+import Analytics from './screens/Analytics'
+import Landing from './screens/Landing'
+import Login from './screens/Login'
+import Profile from './screens/Profile'
 import Recruiter from './screens/Recruiter'
 import Report from './screens/Report'
-import Start from './screens/Start'
-import Submitting from './screens/Submitting'
-import Test from './screens/Test'
+import Results from './screens/Results'
+import Signup from './screens/Signup'
 
-// No router: the candidate flow is a useState state machine, and the
-// recruiter view is reached at a separate path (there is nothing to link
-// between them within a single candidate's session).
-function RecruiterApp() {
-  const [viewingReport, setViewingReport] = useState(null)
-
-  if (viewingReport) {
-    return (
-      <main className="min-h-screen bg-gray-50 py-10">
-        <div className="max-w-3xl mx-auto mb-4">
-          <button
-            type="button"
-            onClick={() => setViewingReport(null)}
-            className="text-sm text-purple-600 underline"
-          >
-            ← Back to candidates
-          </button>
-        </div>
-        <Report report={viewingReport} />
-      </main>
-    )
-  }
-
-  return (
-    <main className="min-h-screen bg-gray-50 py-10">
-      <Recruiter
-        onOpenReport={async (attemptId) => {
-          const report = await getReport(attemptId)
-          setViewingReport(report)
-        }}
-      />
-    </main>
-  )
+function RoleHome() {
+  const { has, user } = useAuth()
+  if (has('roles.manage')) return <Navigate to="/admin" replace />
+  if (has('candidates.view')) return <Navigate to="/dashboard" replace />
+  return <Navigate to={user?.profile ? '/results' : '/profile'} replace />
 }
 
-function CandidateApp() {
-  const [screen, setScreen] = useState('start')
-  const [attemptId, setAttemptId] = useState(null)
-  const [items, setItems] = useState([])
+function Home() {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  return user ? <RoleHome /> : <Landing />
+}
+
+function ReportRoute() {
+  const { attemptId } = useParams()
+  const { has } = useAuth()
   const [report, setReport] = useState(null)
-  const [initialIndex, setInitialIndex] = useState(0)
-  const [submitError, setSubmitError] = useState(null)
-  // Guards re-submission: once the attempt is submitted, retry only re-polls.
-  const submittedRef = useRef(false)
-
-  // Once we're past the last item the attempt can no longer take responses,
-  // so there is nothing to go "back" to. A slow or flaky score must not drop
-  // the candidate into a dead test screen - keep them on the submitting
-  // screen with a retry that re-polls.
-  const runScoring = async (id = attemptId) => {
-    setSubmitError(null)
-    setScreen('submitting')
-    try {
-      if (!submittedRef.current) {
-        await submitAttempt(id)
-        submittedRef.current = true
-      }
-      const fetchedReport = await pollReport(id)
-      setReport(fetchedReport)
-      setScreen('report')
-      clearSession()
-    } catch {
-      setSubmitError(
-        'Scoring is taking longer than expected. Your answers are saved - you can keep waiting.',
-      )
-    }
-  }
-
+  const [err, setErr] = useState(false)
+  const recruiterView = has('candidates.view')
   useEffect(() => {
-    const saved = loadSession()
-    if (!saved) return
-    let cancelled = false
-    getAttemptItems(saved.attemptId)
-      .then(({ items: fetchedItems }) => {
-        if (cancelled) return
-        setItems(fetchedItems)
-        setAttemptId(saved.attemptId)
-        setInitialIndex(Math.min(Math.max(0, saved.index ?? 0), fetchedItems.length - 1))
-        setScreen('test')
-      })
-      .catch(async () => {
-        if (cancelled) return
-        // Items fetch 409s once the attempt has been submitted. If the
-        // candidate refreshed after finishing, recover the report/scoring
-        // state instead of dumping them back to the start screen.
-        try {
-          const recovered = await getReport(saved.attemptId)
-          if (cancelled) return
-          setAttemptId(saved.attemptId)
-          submittedRef.current = true
-          if (recovered.status === 'scoring') {
-            runScoring(saved.attemptId)
-          } else {
-            setReport(recovered)
-            setScreen('report')
-            clearSession()
-          }
-        } catch {
-          if (!cancelled) clearSession()
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const handleBegin = async (name) => {
-    clearSession()
-    submittedRef.current = false
-    const { attempt_id } = await createAttempt(name)
-    const { items: fetchedItems } = await getAttemptItems(attempt_id)
-    setItems(fetchedItems)
-    setAttemptId(attempt_id)
-    setScreen('check')
-  }
-
-  const handleTestComplete = () => {
-    runScoring()
-  }
-
+    getReport(attemptId).then(setReport).catch(() => setErr(true))
+  }, [attemptId])
   return (
-    <main className="min-h-screen bg-gray-50 py-10">
-      {screen === 'start' && <Start onBegin={handleBegin} />}
-      {screen === 'check' && <DeviceCheck onConfirmed={() => setScreen('test')} />}
-      {screen === 'test' && (
-        <Test
-          attemptId={attemptId}
-          items={items}
-          onComplete={handleTestComplete}
-          initialIndex={initialIndex}
-        />
-      )}
-      {screen === 'submitting' && (
-        <Submitting error={submitError} onRetry={runScoring} />
-      )}
-      {screen === 'report' && report && <Report report={report} />}
-    </main>
+    <div className="max-w-3xl mx-auto px-6 py-8 flex flex-col gap-6">
+      <Link
+        to={recruiterView ? '/dashboard' : '/results'}
+        className="self-start text-sm font-medium text-blue-700 hover:underline"
+      >
+        Back to {recruiterView ? 'candidates' : 'my results'}
+      </Link>
+      {err && <p className="text-center text-red-600">Report not available.</p>}
+      {!err && !report && <p className="text-center text-gray-500">Loading…</p>}
+      {report && <Report report={report} />}
+    </div>
   )
 }
 
-function App() {
-  return window.location.pathname === '/recruiter' ? <RecruiterApp /> : <CandidateApp />
+function Dashboard() {
+  const navigate = useNavigate()
+  return <Recruiter onOpenReport={(attemptId) => navigate(`/report/${attemptId}`)} />
 }
 
-export default App
+function AdminRoute() {
+  return <Admin />
+}
+
+function AnalyticsRoute() {
+  return <Analytics />
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/profile" element={<RequireAuth permission="test.take"><AppShell><Profile /></AppShell></RequireAuth>} />
+      <Route path="/results" element={<RequireAuth permission="test.take"><AppShell><Results /></AppShell></RequireAuth>} />
+      <Route path="/test" element={<RequireAuth permission="test.take"><AppShell><CandidateFlow /></AppShell></RequireAuth>} />
+      <Route path="/report/:attemptId" element={<RequireAuth><AppShell><ReportRoute /></AppShell></RequireAuth>} />
+      <Route path="/dashboard" element={<RequireAuth permission="candidates.view"><AppShell><Dashboard /></AppShell></RequireAuth>} />
+      <Route path="/analytics" element={<RequireAuth permission="analytics.view"><AppShell><AnalyticsRoute /></AppShell></RequireAuth>} />
+      <Route path="/admin" element={<RequireAuth permission="roles.manage"><AppShell><AdminRoute /></AppShell></RequireAuth>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  )
+}

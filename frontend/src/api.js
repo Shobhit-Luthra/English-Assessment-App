@@ -30,6 +30,7 @@ export const getMe = () => request('/api/auth/me')
 
 // --- candidate ---
 export const putProfile = (b) => request('/api/candidate/profile', json('PUT', b))
+export const getMyProfile = () => request('/api/me')
 export const getMyAttempts = () => request('/api/me/attempts')
 
 // --- admin ---
@@ -51,6 +52,14 @@ export const submitAttempt = (attemptId) =>
   request(`/api/attempts/${attemptId}/submit`, { method: 'POST' })
 export const getReport = (attemptId) => request(`/api/attempts/${attemptId}/report`)
 export const listAttempts = () => request('/api/attempts')
+
+// --- recruiting ---
+export const listCandidates = () => request('/api/candidates')
+export const setCandidateDecision = (userId, decision) =>
+  request(`/api/candidates/${userId}/decision`, json('POST', { decision }))
+
+// --- analytics ---
+export const fetchAnalytics = () => request('/api/analytics/overview')
 
 export async function uploadAudio(attemptId, itemId, blob, mimeType) {
   const ext = mimeType.includes('webm') ? 'webm' : 'mp4'
