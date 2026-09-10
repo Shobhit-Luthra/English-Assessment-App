@@ -37,3 +37,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Worktrees and agent scratch
+.worktrees/
+.superpowers/sdd/
