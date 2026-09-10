@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from db import get_session
-from models import Attempt, CandidateProfile, User
+from models import Attempt, CandidateProfile, Score, User
 from rbac import require
 
 router = APIRouter(tags=["candidate"])
@@ -23,7 +23,17 @@ def _profile_dict(p: CandidateProfile) -> dict:
     return {
         "full_name": p.full_name, "phone": p.phone, "city": p.city,
         "first_language": p.first_language, "decision": p.decision,
+        "decided_at": p.decided_at.isoformat() if p.decided_at else None,
     }
+
+
+@router.get("/api/me")
+def my_profile(user: User = Depends(require("test.take")),
+               session: Session = Depends(get_session)):
+    profile = session.get(CandidateProfile, user.id)
+    if profile is None:
+        return None
+    return _profile_dict(profile)
 
 
 @router.put("/api/candidate/profile")
@@ -49,4 +59,18 @@ def my_attempts(user: User = Depends(require("test.take")),
     rows = session.exec(
         select(Attempt).where(Attempt.user_id == user.id).order_by(Attempt.created_at.desc())
     ).all()
-    return [{"attempt_id": a.id, "status": a.status, "created_at": a.created_at} for a in rows]
+    result = []
+    for attempt in rows:
+        cir = None
+        if attempt.status == "done":
+            score = session.exec(
+                select(Score).where(Score.attempt_id == attempt.id, Score.dimension == "cir")
+            ).first()
+            cir = score.band if score else None
+        result.append({
+            "attempt_id": attempt.id,
+            "status": attempt.status,
+            "created_at": attempt.created_at.isoformat(),
+            "cir": cir,
+        })
+    return result

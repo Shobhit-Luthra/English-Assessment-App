@@ -1,38 +1,38 @@
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import bank
 import main
 
 
 def test_load_bank_populates_globals():
-    main._ITEMS_BY_ID.clear()
-    main._BANK_BY_SECTION.clear()
-    main._load_bank()
-    assert "g1" in main._ITEMS_BY_ID
-    assert main._ITEMS_BY_ID["g1"]["answer"] == "a"
-    assert len(main._BANK_BY_SECTION["grammar"]) >= main.SELECTION_COUNTS["grammar"]
+    bank.load_bank()
+    assert "g1" in bank.get_all_items()
+    assert bank.get_all_items()["g1"]["answer"] == "a"
+    assert len(bank.get_bank_by_section()["grammar"]) >= bank.SELECTION_COUNTS["grammar"]
 
 
 def test_every_bank_item_has_time_limit_and_valid_section():
-    main._load_bank()
-    valid_sections = set(main.SELECTION_COUNTS)
-    for item in main._ITEMS_BY_ID.values():
+    bank.load_bank()
+    valid_sections = set(bank.SELECTION_COUNTS)
+    for item in bank.get_all_items().values():
         assert item["section"] in valid_sections
         assert isinstance(item["time_limit_s"], int) and item["time_limit_s"] > 0
 
 
 def test_bank_is_large_enough_for_variety():
-    main._load_bank()
-    assert len(main._BANK_BY_SECTION["grammar"]) >= 60
-    assert len(main._BANK_BY_SECTION["writing"]) >= 20
-    read_aloud = [i for i in main._BANK_BY_SECTION["speaking"] if i["type"] == "read_aloud"]
-    situational = [i for i in main._BANK_BY_SECTION["speaking"] if i["type"] == "situational"]
+    bank.load_bank()
+    by_section = bank.get_bank_by_section()
+    assert len(by_section["grammar"]) >= 60
+    assert len(by_section["writing"]) >= 20
+    read_aloud = [i for i in by_section["speaking"] if i["type"] == "read_aloud"]
+    situational = [i for i in by_section["speaking"] if i["type"] == "situational"]
     assert len(read_aloud) >= 8 and len(situational) >= 8
 
 
 def test_no_mcq_always_has_answer_a():
-    main._load_bank()
-    answers = [i["answer"] for i in main._BANK_BY_SECTION["grammar"]]
+    bank.load_bank()
+    answers = [i["answer"] for i in bank.get_bank_by_section()["grammar"]]
     assert len(set(answers)) > 1  # correct option is not always the same letter
 
 
@@ -40,11 +40,9 @@ def test_load_bank_rejects_underfilled_section(tmp_path, monkeypatch):
     thin = tmp_path / "bank.json"
     thin.write_text('{"items": [{"id": "g1", "section": "grammar", "type": "mcq", '
                     '"time_limit_s": 40, "options": ["a"], "answer": "a"}]}', encoding="utf-8")
-    monkeypatch.setattr(main, "BANK_PATH", thin)
-    main._ITEMS_BY_ID.clear()
-    main._BANK_BY_SECTION.clear()
+    monkeypatch.setattr(bank, "BANK_PATH", thin)
     with pytest.raises(RuntimeError, match="grammar"):
-        main._load_bank()
+        bank.load_bank()
 
 
 def test_load_bank_requires_both_speaking_types(tmp_path, monkeypatch):
@@ -59,11 +57,9 @@ def test_load_bank_requires_both_speaking_types(tmp_path, monkeypatch):
     ) + ']}'
     thin = tmp_path / "bank.json"
     thin.write_text(data, encoding="utf-8")
-    monkeypatch.setattr(main, "BANK_PATH", thin)
-    main._ITEMS_BY_ID.clear()
-    main._BANK_BY_SECTION.clear()
+    monkeypatch.setattr(bank, "BANK_PATH", thin)
     with pytest.raises(RuntimeError, match="situational"):
-        main._load_bank()
+        bank.load_bank()
 
 
 def test_startup_seeds_auth(tmp_path, monkeypatch):
