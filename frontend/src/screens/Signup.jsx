@@ -2,6 +2,11 @@ import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { signup } from '../api'
 import { useAuth } from '../auth/AuthContext'
+import AuthLayout from '../components/AuthLayout'
+
+const inputClass =
+  'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none ' +
+  'focus:border-blue-700 focus:ring-2 focus:ring-blue-100'
 
 export default function Signup() {
   const { user, refresh } = useAuth()
@@ -30,38 +35,57 @@ export default function Signup() {
   }
 
   return (
-    <div className="max-w-sm mx-auto flex flex-col gap-5 p-6">
-      <h1 className="text-2xl font-semibold">Create your account</h1>
-      <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Email
-          <input type="email" required value={form.email} onChange={set('email')}
-                 className="rounded-lg border border-gray-300 p-2 font-normal" />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Full name
-          <input type="text" required value={form.display_name} onChange={set('display_name')}
-                 className="rounded-lg border border-gray-300 p-2 font-normal" />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium">
-          Password <span className="font-normal text-gray-500">(at least 10 characters)</span>
-          <input type="password" required minLength={10} value={form.password} onChange={set('password')}
-                 className="rounded-lg border border-gray-300 p-2 font-normal" />
-        </label>
+    <AuthLayout
+      title="Create your account"
+      subtitle="Start your assessment in under a minute."
+      footer="Protected by role-based access control."
+    >
+      <form className="flex flex-col gap-5" onSubmit={onSubmit} noValidate>
+        <div>
+          <label htmlFor="name" className="block text-sm font-medium mb-1.5">
+            Full name
+          </label>
+          <input id="name" type="text" required value={form.display_name} onChange={set('display_name')}
+                 className={inputClass} autoComplete="name" placeholder="Jane Doe" />
+        </div>
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium mb-1.5">
+            Email
+          </label>
+          <input id="email" type="email" required value={form.email} onChange={set('email')}
+                 className={inputClass} autoComplete="email" placeholder="you@example.com" />
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label htmlFor="password" className="text-sm font-medium">Password</label>
+            <span className="text-xs text-gray-400">at least 10 characters</span>
+          </div>
+          <input id="password" type="password" required minLength={10} value={form.password} onChange={set('password')}
+                 className={inputClass} autoComplete="new-password" placeholder="••••••••••" />
+        </div>
         {error && (
-          <p className="text-sm text-red-600">
-            {error}{' '}
-            {error.startsWith('This email') && <Link to="/login" className="underline">Sign in</Link>}
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+            {error.startsWith('This email') && (
+              <Link to="/login" className="ml-1 font-medium underline">Sign in instead</Link>
+            )}
           </p>
         )}
         <button type="submit" disabled={busy}
-                className="rounded-lg bg-purple-600 text-white py-2 font-medium disabled:opacity-50">
+                className="w-full rounded-lg bg-blue-700 text-white py-2.5 font-medium hover:bg-blue-800 disabled:opacity-50">
           {busy ? 'Creating…' : 'Create account'}
         </button>
       </form>
-      <p className="text-sm text-gray-600">
-        Already registered? <Link to="/login" className="underline">Sign in</Link>
+      <div className="mt-6 border-t border-gray-200 pt-5 text-sm text-gray-600">
+        Already registered?
+        <Link to="/login" className="ml-1 font-medium text-blue-700 hover:underline">
+          Sign in
+        </Link>
+      </div>
+      <p className="mt-6 text-xs text-gray-400 leading-relaxed">
+        New accounts start with a candidate profile. Recruiter and administrator
+        accounts are created by an admin.
       </p>
-    </div>
+    </AuthLayout>
   )
 }
