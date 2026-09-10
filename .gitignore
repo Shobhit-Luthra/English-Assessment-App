@@ -38,6 +38,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Test output
+test_results.txt
+
 # Worktrees and agent scratch
 .worktrees/
 .superpowers/sdd/
