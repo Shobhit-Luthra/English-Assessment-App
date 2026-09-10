@@ -14,9 +14,9 @@ def bank_dict():
 @pytest.fixture(autouse=True)
 def _restore_bank():
     yield
-    import main
+    from bank import load_bank
     try:
-        main._load_bank()
+        load_bank()
     except Exception:
         pass
 
@@ -46,13 +46,14 @@ def auth_engine(monkeypatch):
 def api(auth_engine):
     import db
     import main
+    from bank import load_bank
 
     def _get_session():
         with Session(auth_engine) as s:
             yield s
 
     main.app.dependency_overrides[db.get_session] = _get_session
-    main._load_bank()
+    load_bank()
     with TestClient(main.app) as c:
         c._engine = auth_engine
         yield c

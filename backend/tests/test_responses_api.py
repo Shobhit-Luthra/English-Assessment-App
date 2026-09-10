@@ -5,6 +5,7 @@ from sqlmodel.pool import StaticPool
 
 import db
 import main
+from bank import get_all_items, load_bank
 from models import Attempt, Response
 
 
@@ -20,8 +21,8 @@ def client(monkeypatch):
         with Session(engine) as session:
             yield session
 
-    main.app.dependency_overrides[main.get_session] = _get_session
-    main._load_bank()
+    main.app.dependency_overrides[db.get_session] = _get_session
+    load_bank()
     with TestClient(main.app) as c:
         c._engine = engine
         from tests.conftest import authenticate_candidate
@@ -43,7 +44,7 @@ def test_submit_response_rejects_item_not_in_attempt(client):
     attempt_id = _attempt_with(client, ["g1", "g2", "g3", "g4", "l1", "l2", "w1", "s1", "s2"])
     # pick a grammar id that exists in the bank but is not in this fixed selection
     outside = next(
-        i for i in main._ITEMS_BY_ID
+        i for i in get_all_items()
         if i not in {"g1", "g2", "g3", "g4", "l1", "l2", "w1", "s1", "s2"}
     )
     resp = client.post(f"/api/attempts/{attempt_id}/response", json={"item_id": outside, "text": "a"})

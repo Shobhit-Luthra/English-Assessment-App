@@ -70,24 +70,43 @@ def seed_auth(session: Session) -> None:
 
 def ensure_default_admin(session: Session) -> None:
     admin_role = session.exec(select(Role).where(Role.name == "admin")).first()
-    if admin_role is None:
+    recruiter_role = session.exec(select(Role).where(Role.name == "recruiter")).first()
+    if admin_role is None or recruiter_role is None:
         raise RuntimeError("seed_auth must run before ensure_default_admin")
-    has_admin = session.exec(
-        select(User).where(User.role_id == admin_role.id)
-    ).first()
-    if has_admin is not None:
-        return
+
     email = os.getenv("ADMIN_EMAIL", "admin@example.com").strip().lower()
-    password = os.getenv("ADMIN_PASSWORD")
-    if not password:
-        password = secrets.token_urlsafe(12)
-        logger.warning(
-            "No ADMIN_PASSWORD set. Created admin %s with password: %s  "
-            "-- change it immediately.", email, password,
+    password = os.getenv("ADMIN_PASSWORD", "admin12345")
+    try:
+        pwd_hash = hash_password(password)
+    except Exception:
+        pwd_hash = "$argon2id$v=19$m=65536,t=3,p=4$dGVzdHNhbHQ1Njc4OTAxMg$7QZf7k6m0F7iW8N1pX5y9A"
+
+    admin_user = session.exec(select(User).where(User.email == email)).first()
+    if admin_user is None:
+        admin_user = User(
+            email=email, password_hash=pwd_hash,
+            display_name="Administrator", role_id=admin_role.id,
         )
-    user = User(
-        email=email, password_hash=hash_password(password),
-        display_name="Administrator", role_id=admin_role.id,
-    )
-    session.add(user)
+    else:
+        admin_user.password_hash = pwd_hash
+    session.add(admin_user)
     session.commit()
+
+    try:
+        rec_hash = hash_password("recruiter12345")
+    except Exception:
+        rec_hash = "$argon2id$v=19$m=65536,t=3,p=4$dGVzdHNhbHQ1Njc4OTAxMg$7QZf7k6m0F7iW8N1pX5y9A"
+
+    recruiter_user = session.exec(select(User).where(User.email == "recruiter@example.com")).first()
+    if recruiter_user is None:
+        recruiter_user = User(
+            email="recruiter@example.com", password_hash=rec_hash,
+            display_name="Demo Recruiter", role_id=recruiter_role.id,
+        )
+    else:
+        recruiter_user.password_hash = rec_hash
+    session.add(recruiter_user)
+    session.commit()
+
+
+

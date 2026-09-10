@@ -7,6 +7,7 @@ from sqlmodel.pool import StaticPool
 
 import db
 import main
+from bank import get_all_items, load_bank
 from models import Attempt
 
 
@@ -22,8 +23,8 @@ def client(monkeypatch):
         with Session(engine) as session:
             yield session
 
-    main.app.dependency_overrides[main.get_session] = _get_session
-    main._load_bank()
+    main.app.dependency_overrides[db.get_session] = _get_session
+    load_bank()
     with TestClient(main.app) as c:
         c._engine = engine
         from tests.conftest import authenticate_candidate
@@ -42,9 +43,9 @@ def test_create_attempt_persists_selection(client):
         assert len(set(attempt.item_ids)) == 10
         # every mcq in the selection has a permutation
         for item_id in attempt.item_ids:
-            if main._ITEMS_BY_ID[item_id]["type"] == "mcq":
+            if get_all_items()[item_id]["type"] == "mcq":
                 assert sorted(attempt.option_order[item_id]) == list(
-                    range(len(main._ITEMS_BY_ID[item_id]["options"]))
+                    range(len(get_all_items()[item_id]["options"]))
                 )
 
 
@@ -81,7 +82,7 @@ def test_get_attempt_items_strips_answer_and_shuffles(client):
         attempt = session.get(Attempt, attempt_id)
     first_mcq = next(i for i in items if i["type"] == "mcq")
     perm = attempt.option_order[first_mcq["id"]]
-    original = main._ITEMS_BY_ID[first_mcq["id"]]["options"]
+    original = get_all_items()[first_mcq["id"]]["options"]
     assert first_mcq["options"] == [original[idx] for idx in perm]
 
 
@@ -104,11 +105,13 @@ def test_old_items_endpoint_is_gone(client):
 
 
 def test_get_attempt_items_409_when_an_item_left_the_bank(client, monkeypatch):
+    import bank
+
     attempt_id = client.post("/api/attempts", json={"name": "Ada"}).json()["attempt_id"]
     with Session(client._engine) as session:
         dropped = session.get(Attempt, attempt_id).item_ids[0]
-    trimmed = {k: v for k, v in main._ITEMS_BY_ID.items() if k != dropped}
-    monkeypatch.setattr(main, "_ITEMS_BY_ID", trimmed)
+    trimmed = {k: v for k, v in bank.get_all_items().items() if k != dropped}
+    monkeypatch.setattr(bank, "_ITEMS_BY_ID", trimmed)
     assert client.get(f"/api/attempts/{attempt_id}/items").status_code == 409
 
 

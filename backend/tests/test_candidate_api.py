@@ -31,3 +31,43 @@ def test_me_attempts_empty_for_new_candidate(api):
     _signup(api, "own@x.com")
     r = api.get("/api/me/attempts")
     assert r.status_code == 200 and r.json() == []
+
+
+def test_me_returns_profile_and_decision(api):
+    from sqlmodel import Session, select
+
+    from models import CandidateProfile, User
+
+    _signup(api, "own@x.com")
+    api.put("/api/candidate/profile", json={"full_name": "Cee", "phone": "999"})
+    me = api.get("/api/me")
+    assert me.status_code == 200
+    assert me.json()["full_name"] == "Cee"
+    assert me.json()["decision"] == "pending"
+
+    with Session(api._engine) as s:
+        u = s.exec(select(User).where(User.email == "own@x.com")).first()
+        s.get(CandidateProfile, u.id).decision = "hired"
+        s.commit()
+    assert api.get("/api/me").json()["decision"] == "hired"
+
+
+def test_me_attempts_include_cir_for_done_attempts(api):
+    from sqlmodel import Session, select
+
+    from models import Attempt, Score, User
+
+    _signup(api, "own@x.com")
+    with Session(api._engine) as s:
+        u = s.exec(select(User).where(User.email == "own@x.com")).first()
+        a = Attempt(name="Cee", user_id=u.id, status="done")
+        s.add(a)
+        s.flush()
+        s.add(Score(attempt_id=a.id, dimension="cir", band=6))
+        s.add(Score(attempt_id=a.id, dimension="grammar", band=5))
+        s.commit()
+        attempt_id = a.id
+    rows = api.get("/api/me/attempts").json()
+    assert rows[0]["attempt_id"] == attempt_id
+    assert rows[0]["cir"] == 6
+    assert rows[0]["status"] == "done"

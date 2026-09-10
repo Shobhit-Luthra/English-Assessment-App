@@ -1,4 +1,5 @@
-from sqlmodel import Session
+from sqlmodel import Session, select
+from models import Attempt, Score
 from tests.conftest import make_user
 
 
@@ -36,3 +37,21 @@ def test_recruiter_can_view_any_report_and_list(api):
 def test_candidate_cannot_list_attempts(api):
     _finished_attempt(api, "nolist@x.com")
     assert api.get("/api/attempts").status_code == 403
+
+
+def test_report_includes_speaking_item_metadata(api):
+    aid = _finished_attempt(api, "meta@x.com")
+    with Session(api._engine) as s:
+        attempt = s.exec(select(Attempt).where(Attempt.id == aid)).one()
+        s.add(Score(
+            attempt_id=attempt.id,
+            dimension="speaking_fluency_s1",
+            band=5,
+            evidence={"item_id": "s1", "transcript": "Thank you for calling..."},
+        ))
+        s.commit()
+    report = api.get(f"/api/attempts/{aid}/report").json()
+    speaking = [x for x in report["scores"] if x["dimension"] == "speaking_fluency_s1"][0]
+    assert speaking["evidence"]["item_type"] == "read_aloud"
+    assert speaking["evidence"]["reference_text"]
+    assert "delayed delivery" in speaking["evidence"]["reference_text"]
