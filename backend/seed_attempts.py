@@ -70,9 +70,20 @@ SEED_ITEM_IDS = ["g1", "g2", "g3", "g4", "l1", "l2", "w1", "s1", "s2"]
 
 
 def seed_one(client: httpx.Client, candidate: dict) -> str:
-    attempt_id = client.post(
+    email = candidate["name"].split("(")[0].strip().lower().replace(" ", "") + "@example.com"
+    password = "Password123!"
+    res = client.post("/api/auth/signup", json={"email": email, "password": password, "display_name": candidate["name"]})
+    if res.status_code == 409:
+        client.post("/api/auth/login", json={"email": email, "password": password})
+
+    client.put("/api/candidate/profile", json={"full_name": candidate["name"], "phone": "1234567890"})
+
+    resp = client.post(
         "/api/attempts", json={"name": candidate["name"], "item_ids": SEED_ITEM_IDS}
-    ).json()["attempt_id"]
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Failed to create attempt: {resp.status_code} {resp.text}")
+    attempt_id = resp.json()["attempt_id"]
 
     served = {i["id"]: i for i in client.get(f"/api/attempts/{attempt_id}/items").json()["items"]}
     bank = {i["id"]: i for i in json.load(open(Path(__file__).parent / "bank.json"))["items"]}

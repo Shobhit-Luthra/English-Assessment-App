@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import ollama
@@ -5,7 +6,8 @@ import ollama
 from scoring.schemas import AttemptScores
 
 RUBRIC_PATH = Path(__file__).parent / "rubric.md"
-MODEL = "qwen2.5:3b-instruct"
+
+OLLAMA_MODEL = os.getenv("OLLAMA_JUDGE_MODEL", "qwen3:8b")
 
 
 def _interpret_features(feats: dict) -> str:
@@ -94,10 +96,13 @@ def build_prompt(writing_entries: list[dict], speaking_entries: list[dict]) -> s
 
 def call_judge(prompt: str) -> AttemptScores:
     response = ollama.chat(
-        model=MODEL,
+        model=OLLAMA_MODEL,
         messages=[{"role": "user", "content": prompt}],
         format=AttemptScores.model_json_schema(),
-        options={"temperature": 0, "num_predict": 400, "num_ctx": 4096},
+        # qwen3 is a thinking model: it spends most of its token budget
+        # reasoning before emitting the JSON, so the budget must be several
+        # times the expected output size or the response comes back empty.
+        options={"temperature": 0, "num_predict": 2400, "num_ctx": 8192},
         keep_alive="30m",
     )
     return AttemptScores.model_validate_json(response["message"]["content"])
@@ -109,7 +114,7 @@ def warm_up() -> None:
     ~5 minutes; without this, the first score after a fresh start (or after
     a gap between rehearsal and the live demo) pays that reload cost."""
     ollama.chat(
-        model=MODEL,
+        model=OLLAMA_MODEL,
         messages=[{"role": "user", "content": "Reply with the single word: ready"}],
         options={"num_predict": 10},
         keep_alive="30m",

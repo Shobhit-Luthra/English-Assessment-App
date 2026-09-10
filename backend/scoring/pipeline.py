@@ -30,8 +30,8 @@ def run_scoring_pipeline(
 ) -> None:
     """Runs after /submit, via BackgroundTasks. Strictly sequential: all
     transcription happens before Whisper is released, which happens before
-    the single judge call - Whisper and Ollama contend for the same CPU/RAM
-    (demo PRD §5.4)."""
+    the single judge call - Whisper and the local Ollama judge contend for the
+    same CPU/RAM (demo PRD §5.4)."""
     with Session(engine) as session:
         attempt = session.get(Attempt, attempt_id)
         if attempt is None:
@@ -73,9 +73,14 @@ def _run(
         if not resp or not resp.audio_path:
             continue
         audio_path = BASE_DIR / resp.audio_path
-        transcript, words = transcribe(str(audio_path))
+        transcript, words, clip_duration = transcribe(str(audio_path))
         transcripts[item["id"]] = transcript
+        # ffprobe duration is preferred (it includes silence before/after the
+        # detected speech); fall back to Whisper's decoded duration when ffprobe
+        # is missing so the fluency features never collapse to zero.
         duration_s = (resp.duration_ms or 0) / 1000
+        if duration_s <= 0:
+            duration_s = clip_duration
         features_by_item[item["id"]] = extract_features(words, duration_s)
         if item["type"] == "read_aloud":
             wer_by_item[item["id"]] = word_error_rate(item["reference_text"], transcript)
@@ -104,6 +109,13 @@ def _run(
         judged = call_judge(prompt)
 
     fluency_bands: list[int] = []
+
+    # Composite section evidence: every judged sub-skill averaged into a single
+    # 1-6 band per speaking/writing item, then averaged across items. These are
+    # stored so recruiter-facing metrics reflect the full rubric instead of a
+    # single dimension (fluency only / tone only).
+    judged_speaking: list[float] = []
+    judged_writing: list[float] = []
 
     # S1: deterministic, Whisper-only (WER + fluency arithmetic, no LLM).
     for item in speaking_items:
@@ -134,6 +146,9 @@ def _run(
             if feats:
                 apply_sanity_clamp(s, feats)
             fluency_bands.append(s.fluency)
+            judged_speaking.append(
+                (s.fluency + s.grammar + s.vocabulary + s.task_fulfilment) / 4
+            )
             session.add(
                 Score(
                     attempt_id=attempt_id,
@@ -157,6 +172,9 @@ def _run(
             )
 
         for w in judged.writing:
+            judged_writing.append(
+                (w.grammar + w.vocabulary + w.tone_appropriateness + w.task_fulfilment) / 4
+            )
             session.add(
                 Score(
                     attempt_id=attempt_id,
@@ -165,6 +183,25 @@ def _run(
                     evidence={"item_id": w.item_id, "justification": w.justification},
                 )
             )
+
+    if judged_speaking:
+        session.add(
+            Score(
+                attempt_id=attempt_id,
+                dimension="speaking",
+                band=round(sum(judged_speaking) / len(judged_speaking)),
+                evidence={"components": judged_speaking},
+            )
+        )
+    if judged_writing:
+        session.add(
+            Score(
+                attempt_id=attempt_id,
+                dimension="writing",
+                band=round(sum(judged_writing) / len(judged_writing)),
+                evidence={"components": judged_writing},
+            )
+        )
 
     session.commit()
 

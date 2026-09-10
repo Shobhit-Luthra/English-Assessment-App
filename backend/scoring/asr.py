@@ -21,8 +21,8 @@ def warm_up() -> None:
 
 
 def unload_model() -> None:
-    """Release Whisper before the Ollama judge call - both compete for the
-    same CPU/RAM, and running them concurrently causes swapping and
+    """Release Whisper before the judge call - a local Ollama judge competes
+    for the same CPU/RAM, and running both concurrently causes swapping and
     multi-minute stalls (see demo PRD §5.4)."""
     global _model
     _model = None
@@ -36,13 +36,17 @@ class Word:
     end: float
 
 
-def transcribe(audio_path: str) -> tuple[str, list[Word]]:
+def transcribe(audio_path: str) -> tuple[str, list[Word], float]:
+    """Transcribe audio, returning the transcript, word-level timestamps and
+    the clip duration decoded by Whisper (seconds). The duration is a fallback
+    source: ffmpeg/ffprobe is not guaranteed on every machine, and the fluent
+    features need a non-zero total duration or they all collapse to zero."""
     model = _get_model()
-    segments, _info = model.transcribe(audio_path, word_timestamps=True)
+    segments, info = model.transcribe(audio_path, word_timestamps=True)
     words: list[Word] = []
     parts: list[str] = []
     for segment in segments:
         parts.append(segment.text.strip())
         for w in segment.words or []:
             words.append(Word(word=w.word.strip(), start=w.start, end=w.end))
-    return " ".join(parts), words
+    return " ".join(parts), words, float(info.duration or 0.0)

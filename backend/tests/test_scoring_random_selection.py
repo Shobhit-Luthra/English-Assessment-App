@@ -14,6 +14,7 @@ from sqlmodel.pool import StaticPool
 
 import db
 import main
+from bank import get_all_items, load_bank
 from models import Attempt, Score
 
 _LETTERS = ["a", "b", "c", "d", "e", "f"]
@@ -21,19 +22,21 @@ _LETTERS = ["a", "b", "c", "d", "e", "f"]
 
 @pytest.fixture
 def client(monkeypatch):
+    import scoring.pipeline
+
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     SQLModel.metadata.create_all(engine)
     monkeypatch.setattr(db, "engine", engine)
-    monkeypatch.setattr(main, "run_scoring_pipeline", lambda *a, **k: None)
+    monkeypatch.setattr(scoring.pipeline, "run_scoring_pipeline", lambda *a, **k: None)
 
     def _get_session():
         with Session(engine) as session:
             yield session
 
-    main.app.dependency_overrides[main.get_session] = _get_session
-    main._load_bank()
+    main.app.dependency_overrides[db.get_session] = _get_session
+    load_bank()
     with TestClient(main.app) as c:
         c._engine = engine
         from tests.conftest import authenticate_candidate
@@ -52,7 +55,7 @@ def test_random_attempt_all_correct_scores_perfect_objective_bands(client):
     for served in payload["items"]:
         if served["type"] != "mcq":
             continue
-        bank_item = main._ITEMS_BY_ID[served["id"]]
+        bank_item = get_all_items()[served["id"]]
         correct_text = bank_item["options"][_LETTERS.index(bank_item["answer"])]
         display_pos = served["options"].index(correct_text)
         client.post(
