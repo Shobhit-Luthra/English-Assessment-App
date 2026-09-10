@@ -5,7 +5,7 @@ import SpeakingItem from '../components/SpeakingItem'
 import Timer from '../components/Timer'
 import WritingItem from '../components/WritingItem'
 import { submitResponse, uploadAudio } from '../api'
-import { saveSession } from '../session'
+import { saveSession } from '../testProgress'
 
 const SPEAKING_TYPES = new Set(['read_aloud', 'situational'])
 const GLOBAL_LIMIT_S = 840
@@ -24,11 +24,16 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
     ),
   )
   const [error, setError] = useState(null)
+  const [saved, setSaved] = useState(false)
   const globalFiredRef = useRef(false)
 
   useEffect(() => {
     saveSession({ attemptId, index })
   }, [attemptId, index])
+
+  useEffect(() => {
+    setSaved(false)
+  }, [index])
 
   const handleGlobalExpire = () => {
     if (globalFiredRef.current) return
@@ -62,6 +67,7 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
     setAnswers((prev) => ({ ...prev, [item.id]: value }))
     try {
       await submitResponse(attemptId, item.id, value)
+      setSaved(true)
     } catch {
       setError('Could not save your answer. Check your connection and try again.')
     }
@@ -83,7 +89,7 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
   return (
     <div className="max-w-2xl mx-auto flex flex-col gap-6 p-6">
       {/* Global test timer: a standalone circle pinned to the top-right. */}
-      <div className="fixed top-4 right-4 z-10 flex flex-col items-center gap-1 rounded-xl bg-white/90 p-2 shadow-sm backdrop-blur">
+      <div className="fixed top-16 right-4 z-10 flex flex-col items-center gap-1 rounded-lg border border-gray-200 bg-white p-2">
         <Timer
           seconds={GLOBAL_LIMIT_S}
           itemKey="global"
@@ -91,14 +97,21 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
           size="md"
           label="Time left in the whole test"
         />
-        <span className="text-[10px] uppercase tracking-wide text-gray-400">Test</span>
+        <span className="text-xs text-gray-500">Test</span>
       </div>
 
       <Progress items={items} index={index} />
       <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>
-          Item {index + 1} of {items.length}
-        </span>
+        <div className="flex items-center gap-3">
+          <span>
+            Item {index + 1} of {items.length}
+          </span>
+          {saved && !error && (
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+              Saved
+            </span>
+          )}
+        </div>
         {!isSpeaking && item.time_limit_s && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">This question</span>
@@ -112,6 +125,15 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
           </div>
         )}
       </div>
+
+      {item.type === 'mcq' && (
+        <p className="text-xs text-gray-500">Choose the best answer. You can change it before moving on.</p>
+      )}
+      {item.type === 'text' && (
+        <p className="text-xs text-gray-500">
+          Write your reply below. Aim for around {item.word_target} words.
+        </p>
+      )}
 
       {item.type === 'mcq' && (
         <McqItem item={item} value={answers[item.id]} onAnswer={handleAnswer} />
@@ -129,7 +151,7 @@ export default function Test({ attemptId, items, onComplete, initialIndex = 0 })
         <button
           type="button"
           onClick={goNext}
-          className="self-end rounded-lg bg-purple-600 text-white px-6 py-2 font-medium"
+          className="self-end rounded-lg bg-blue-700 text-white px-6 py-2 font-medium"
         >
           {isLast ? 'Finish' : 'Next'}
         </button>

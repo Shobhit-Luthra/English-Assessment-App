@@ -7,18 +7,36 @@ import Timer from './Timer'
 export default function SpeakingItem({ item, onSubmitted }) {
   const [started, setStarted] = useState(false)
   const [error, setError] = useState(null)
-  const { isRecording, blob, start, stop } = useRecorder()
+  const { isRecording, starting, blob, start, stop } = useRecorder()
 
-  const phase = !started ? 'prep' : isRecording || !blob ? 'recording' : 'review'
+  // Explicit phases instead of deriving "recording" from "no blob yet":
+  // a Stopped-but-not-yet-finalised clip must not look like it is still
+  // recording.
+  const phase = !started
+    ? 'prep'
+    : starting
+      ? 'starting'
+      : isRecording
+        ? 'recording'
+        : blob
+          ? 'review'
+          : 'finalizing'
 
   const beginRecording = async () => {
+    setError(null)
     setStarted(true)
     try {
-      await start(item.time_limit_s)
+      const didStart = await start(item.time_limit_s)
+      if (!didStart) setStarted(false) // Stop was pressed during mic permission
     } catch {
       setError('Microphone access was denied.')
       setStarted(false)
     }
+  }
+
+  const cancelStart = () => {
+    stop()
+    setStarted(false) // back to prep; useRecorder discards the pending stream
   }
 
   const audioUrl = blob ? URL.createObjectURL(blob) : null
@@ -42,19 +60,29 @@ export default function SpeakingItem({ item, onSubmitted }) {
         </div>
       )}
 
-      {phase === 'recording' && (
+      {(phase === 'starting' || phase === 'recording') && (
         <div className="flex flex-col items-center gap-3">
-          <p className="text-sm font-medium text-red-600">Recording...</p>
-          <Timer seconds={item.time_limit_s} itemKey={`${item.id}-rec`} onExpire={stop} />
+          <p className="text-sm font-medium text-red-600">
+            {phase === 'starting' ? 'Accessing microphone...' : 'Recording...'}
+          </p>
+          {phase === 'recording' && (
+            <Timer seconds={item.time_limit_s} itemKey={`${item.id}-rec`} onExpire={stop} />
+          )}
+          {phase === 'starting' && <p className="text-xs text-gray-500">Please allow microphone access.</p>}
           <button
             type="button"
-            onClick={stop}
-            disabled={!isRecording}
-            className="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
+            onClick={phase === 'starting' ? cancelStart : stop}
+            className="rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700"
           >
-            Stop &amp; review
+            {phase === 'starting' ? 'Cancel' : 'Stop & review'}
           </button>
         </div>
+      )}
+
+      {phase === 'finalizing' && (
+        <p className="text-center text-sm font-medium text-gray-600">
+          Finalizing your recording...
+        </p>
       )}
 
       {phase === 'review' && audioUrl && (
@@ -64,7 +92,7 @@ export default function SpeakingItem({ item, onSubmitted }) {
           <button
             type="button"
             onClick={() => onSubmitted(blob)}
-            className="rounded-lg bg-purple-600 text-white px-6 py-2 font-medium self-end"
+            className="rounded-lg bg-blue-700 text-white px-6 py-2 font-medium self-end"
           >
             Submit
           </button>

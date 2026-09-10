@@ -4,7 +4,7 @@ import { useRecorder } from '../hooks/useRecorder'
 const CHECK_DURATION_S = 5
 
 export default function DeviceCheck({ onConfirmed }) {
-  const { isRecording, blob, start, reset } = useRecorder()
+  const { isRecording, starting, blob, start, reset } = useRecorder()
   const [error, setError] = useState(null)
   const [confirmed, setConfirmed] = useState(false)
   const audioRef = useRef(null)
@@ -33,16 +33,16 @@ export default function DeviceCheck({ onConfirmed }) {
       <h1 className="text-xl font-semibold">Device Check</h1>
       <p className="text-sm text-gray-600">
         We need to check your microphone before you begin. Record a short clip, then play it back
-        to confirm you can hear yourself.
+        to confirm you can hear yourself. You can redo the clip any time.
       </p>
 
       <button
         type="button"
         onClick={handleRecord}
-        disabled={isRecording}
-        className="rounded-lg bg-purple-600 text-white py-3 font-medium disabled:opacity-40"
+        disabled={isRecording || starting}
+        className="rounded-lg bg-blue-700 text-white py-3 font-medium disabled:opacity-40"
       >
-        {isRecording ? `Recording... ${CHECK_DURATION_S}s` : 'Record 5 seconds'}
+        {starting ? 'Accessing microphone...' : isRecording ? `Recording... ${CHECK_DURATION_S}s` : 'Record 5 seconds'}
       </button>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -56,7 +56,7 @@ export default function DeviceCheck({ onConfirmed }) {
               type="checkbox"
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
-              className="accent-purple-600"
+              className="accent-blue-700"
             />
             I could hear myself clearly
           </label>
@@ -67,7 +67,7 @@ export default function DeviceCheck({ onConfirmed }) {
         type="button"
         onClick={onConfirmed}
         disabled={!confirmed}
-        className="rounded-lg bg-green-600 text-white py-3 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+        className="rounded-lg bg-blue-700 text-white py-3 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Continue
       </button>

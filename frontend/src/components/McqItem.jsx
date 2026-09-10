@@ -18,7 +18,7 @@ export default function McqItem({ item, value, onAnswer }) {
             <label
               key={letter}
               className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition ${
-                selected ? 'border-purple-500 bg-purple-50' : 'border-gray-200'
+                selected ? 'border-blue-600 bg-blue-50' : 'border-gray-200'
               }`}
             >
               <input
@@ -27,7 +27,7 @@ export default function McqItem({ item, value, onAnswer }) {
                 value={letter}
                 checked={selected}
                 onChange={() => onAnswer(letter)}
-                className="accent-purple-600"
+                className="accent-blue-700"
               />
               <span>{option}</span>
             </label>

@@ -13,7 +13,7 @@ export default function WritingItem({ item, value, onAnswer }) {
         value={value || ''}
         onChange={(e) => onAnswer(e.target.value)}
         rows={8}
-        className="w-full rounded-lg border border-gray-300 p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="w-full rounded-lg border border-gray-300 p-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
         placeholder="Type your reply here..."
       />
       <div className="text-sm text-gray-500">

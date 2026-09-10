@@ -76,7 +76,7 @@ export default function Timer({ seconds, onExpire, itemKey, size = 'sm', label }
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={circumference * (1 - fraction)}
-            className={low ? 'text-amber-500' : 'text-purple-600'}
+            className={low ? 'text-amber-500' : 'text-blue-700'}
             style={{ transition: 'stroke-dashoffset 0.2s linear' }}
           />
         </svg>

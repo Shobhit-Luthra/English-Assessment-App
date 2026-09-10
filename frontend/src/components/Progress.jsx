@@ -17,9 +17,9 @@ export default function Progress({ items, index }) {
           : null
 
         const classes = active
-          ? 'bg-purple-600 text-white'
+          ? 'bg-blue-700 text-white'
           : done
-            ? 'bg-purple-100 text-purple-700'
+            ? 'bg-blue-100 text-blue-800'
             : 'bg-gray-100 text-gray-400'
 
         return (
