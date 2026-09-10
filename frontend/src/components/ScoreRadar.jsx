@@ -30,8 +30,8 @@ export default function ScoreRadar({ bandsByDimension }) {
           <PolarRadiusAxis domain={[0, 6]} tickCount={7} axisLine={false} tick={{ fontSize: 10 }} />
           <Radar
             dataKey="band"
-            stroke="#9333ea"
-            fill="#9333ea"
+            stroke="#1d4ed8"
+            fill="#1d4ed8"
             fillOpacity={0.35}
             isAnimationActive={false}
           />

@@ -21,28 +21,89 @@ function ScoreBar({ label, value, total }) {
   )
 }
 
+const SPEAKING_LABELS = {
+  read_aloud: 'Read Aloud',
+  situational: 'Situational',
+}
+
+function bandBadgeClass(band) {
+  if (band >= 5) return 'bg-green-100 text-green-800'
+  if (band === 4) return 'bg-yellow-100 text-yellow-800'
+  return 'bg-red-100 text-red-800'
+}
+
+function Stat({ label, value }) {
+  return (
+    <span className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600">
+      <span className="text-gray-400">{label}:</span> {value}
+    </span>
+  )
+}
+
 function SpeakingCard({ score }) {
   const { evidence, band, audio_url: audioUrl } = score
-  const label = evidence.item_id === 's1' ? 'S1 - Read Aloud' : 'S2 - Situational'
+  const title = SPEAKING_LABELS[evidence.item_type] || 'Speaking'
+  const section = evidence.item_id?.toUpperCase()
+  const features = evidence.features
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-medium">{label}</h3>
-        <span className="font-mono text-lg">{band} / 6</span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium">{title}</h3>
+          {section && (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500">
+              {section}
+            </span>
+          )}
+        </div>
+        <span className={`rounded-full px-3 py-1 font-mono text-sm ${bandBadgeClass(band)}`}>
+          Band {band} / 6
+        </span>
       </div>
+
       {audioUrl && (
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <audio controls src={audioUrl} className="w-full" />
       )}
-      <p className="text-sm text-gray-600 italic">"{evidence.transcript}"</p>
-      {evidence.justification && <p className="text-sm text-gray-800">{evidence.justification}</p>}
-      {evidence.features && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 font-mono">
-          <span>speech_rate: {evidence.features.speech_rate.toFixed(1)} wpm</span>
-          <span>phonation_ratio: {evidence.features.phonation_ratio.toFixed(2)}</span>
-          <span>mean_length_of_run: {evidence.features.mean_length_of_run.toFixed(1)}</span>
-          <span>pauses_per_100w: {evidence.features.pauses_per_100w.toFixed(1)}</span>
-          {evidence.wer !== undefined && <span>WER: {(evidence.wer * 100).toFixed(0)}%</span>}
+
+      {evidence.transcript && (
+        <div className="rounded-md bg-gray-50 p-3">
+          <p className="mb-1 text-xs font-medium text-gray-500">What was said</p>
+          <p className="text-sm text-gray-700">{evidence.transcript}</p>
+        </div>
+      )}
+
+      {evidence.reference_text && (
+        <div className="rounded-md border border-dashed border-gray-300 p-3">
+          <p className="mb-1 text-xs font-medium text-gray-500">
+            Expected (read aloud)
+          </p>
+          <p className="text-sm text-gray-500">{evidence.reference_text}</p>
+        </div>
+      )}
+
+      {evidence.justification && (
+        <p className="text-sm text-gray-800">{evidence.justification}</p>
+      )}
+
+      {features && (
+        <div className="flex flex-wrap gap-2">
+          {features.speech_rate !== undefined && (
+            <Stat label="Speech rate" value={`${features.speech_rate.toFixed(0)} wpm`} />
+          )}
+          {features.phonation_ratio !== undefined && (
+            <Stat label="Voice activity" value={`${Math.round(features.phonation_ratio * 100)}%`} />
+          )}
+          {features.mean_length_of_run !== undefined && (
+            <Stat label="Avg. run" value={`${features.mean_length_of_run.toFixed(1)} words`} />
+          )}
+          {features.pauses_per_100w !== undefined && (
+            <Stat label="Pauses" value={`${features.pauses_per_100w.toFixed(1)} / 100 words`} />
+          )}
+          {evidence.wer !== undefined && (
+            <Stat label="Word error rate" value={`${(evidence.wer * 100).toFixed(0)}%`} />
+          )}
         </div>
       )}
     </div>
@@ -91,15 +152,25 @@ export default function Report({ report }) {
   return (
     <div className="max-w-3xl mx-auto flex flex-col gap-8 p-6">
       <div className="flex flex-col items-center gap-3 text-center">
-        <h1 className="text-2xl font-semibold">{report.name}'s Report</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">{report.name}'s Report</h1>
+          <p className="mt-1 font-mono text-xs text-gray-400">Attempt {report.attempt_id}</p>
+        </div>
         {cir && (
           <>
-            <div className="text-5xl font-bold text-purple-700">{cir.band} / 6</div>
+            <div className="text-5xl font-bold text-blue-800">{cir.band} / 6</div>
             {rec && (
               <span className={`rounded-full px-4 py-1 text-sm font-medium ${rec.className}`}>
                 {rec.label}
               </span>
             )}
+            <p className="text-xs text-gray-500">
+              {cir.band >= 5
+                ? 'Recommended - meets the passing band.'
+                : cir.band === 4
+                  ? 'Borderline - review the details below.'
+                  : 'Not recommended - below the passing band.'}
+            </p>
           </>
         )}
       </div>
