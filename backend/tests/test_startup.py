@@ -1,4 +1,5 @@
 import pytest
+from sqlmodel import Session, SQLModel, create_engine, select
 
 import main
 
@@ -63,3 +64,25 @@ def test_load_bank_requires_both_speaking_types(tmp_path, monkeypatch):
     main._BANK_BY_SECTION.clear()
     with pytest.raises(RuntimeError, match="situational"):
         main._load_bank()
+
+
+def test_startup_seeds_auth(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAIL", "seed-admin@corp.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "seed-admin-pw-123")
+
+    import db
+    from fastapi.testclient import TestClient
+    from models import User
+
+    test_engine = create_engine(
+        f"sqlite:///{tmp_path / 'startup.db'}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(test_engine)
+    monkeypatch.setattr(db, "engine", test_engine)
+
+    with TestClient(main.app):
+        pass
+
+    with Session(test_engine) as s:
+        user = s.exec(select(User).where(User.email == "seed-admin@corp.com")).first()
+        assert user is not None

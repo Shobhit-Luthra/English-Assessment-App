@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from db import get_session, init_db
-from models import Attempt, Response, Score
+from models import Attempt, CandidateProfile, Response, Score
+from rbac import CurrentUser, require, user_permissions
 from scoring.asr import warm_up as warm_up_asr
 from scoring.judge import warm_up
 from scoring.objective import score_section
@@ -43,6 +44,14 @@ AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="English Assessment Demo API")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
+
+from admin import router as admin_router  # noqa: E402
+from auth import router as auth_router  # noqa: E402
+from candidate import router as candidate_router  # noqa: E402
+
+app.include_router(auth_router)
+app.include_router(candidate_router)
+app.include_router(admin_router)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -90,12 +99,19 @@ def _warm_up_judge_in_background() -> None:
 def on_startup() -> None:
     init_db()
     _load_bank()
+    from db import engine
+    from seed_auth import ensure_default_admin, seed_auth
+
+    # seed_auth commits several times internally, so give it a fresh session
+    # that shares no pending work with request handlers.
+    with Session(engine) as session:
+        seed_auth(session)
+        ensure_default_admin(session)
     # Fire-and-forget: don't block server startup on Ollama being ready.
     threading.Thread(target=_warm_up_judge_in_background, daemon=True).start()
 
 
 class CreateAttemptRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
     item_ids: list[str] | None = None  # seed-only; ignored unless env flag set
 
 
@@ -120,8 +136,12 @@ def _resolve_selection(payload: CreateAttemptRequest, attempt_id: str) -> list[s
 
 
 @app.post("/api/attempts", response_model=CreateAttemptResponse)
-def create_attempt(payload: CreateAttemptRequest, session: SessionDep):
-    attempt = Attempt(name=payload.name.strip())
+def create_attempt(payload: CreateAttemptRequest, session: SessionDep,
+                   user=Depends(require("test.take"))):
+    profile = session.get(CandidateProfile, user.id)
+    if profile is None:
+        raise HTTPException(status_code=409, detail="Complete your profile first")
+    attempt = Attempt(name=profile.full_name, user_id=user.id)
     attempt.item_ids = _resolve_selection(payload, attempt.id)
     selected_items = [_ITEMS_BY_ID[i] for i in attempt.item_ids]
     attempt.option_order = option_permutations(selected_items, random.Random(attempt.id + "opts"))
@@ -145,6 +165,15 @@ def _get_attempt_or_404(session: Session, attempt_id: str) -> Attempt:
     return attempt
 
 
+def _require_own_attempt(session: Session, attempt_id: str, user) -> Attempt:
+    """Resolve an attempt that must belong to ``user``. Unknown and
+    not-owned collapse to the same 404 so ownership is not an oracle."""
+    attempt = session.get(Attempt, attempt_id)
+    if attempt is None or attempt.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    return attempt
+
+
 def _lookup_item(item_id: str) -> dict:
     """Resolve an id stored on an attempt against the loaded bank. The bank
     can change under a live attempt (an item pulled from bank.json between
@@ -159,8 +188,9 @@ def _lookup_item(item_id: str) -> dict:
 
 
 @app.get("/api/attempts/{attempt_id}/items")
-def get_attempt_items(attempt_id: str, session: SessionDep):
-    attempt = _get_attempt_or_404(session, attempt_id)
+def get_attempt_items(attempt_id: str, session: SessionDep,
+                      user=Depends(require("test.take"))):
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
@@ -186,8 +216,9 @@ class SubmitResponseRequest(BaseModel):
 
 
 @app.post("/api/attempts/{attempt_id}/response")
-def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: SessionDep):
-    attempt = _get_attempt_or_404(session, attempt_id)
+def submit_response(attempt_id: str, payload: SubmitResponseRequest, session: SessionDep,
+                    user=Depends(require("test.take"))):
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     if payload.item_id not in attempt.item_ids:
@@ -233,8 +264,9 @@ async def upload_audio(
     session: SessionDep,
     item_id: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
+    user=Depends(require("test.take")),
 ):
-    attempt = _get_attempt_or_404(session, attempt_id)
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt is no longer accepting responses")
     if item_id not in attempt.item_ids:
@@ -283,8 +315,9 @@ async def upload_audio(
 
 
 @app.post("/api/attempts/{attempt_id}/submit")
-def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep):
-    attempt = _get_attempt_or_404(session, attempt_id)
+def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep,
+                   user=Depends(require("test.take"))):
+    attempt = _require_own_attempt(session, attempt_id, user)
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt already submitted")
 
@@ -322,8 +355,12 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
 
 
 @app.get("/api/attempts/{attempt_id}/report")
-def get_report(attempt_id: str, session: SessionDep):
+def get_report(attempt_id: str, session: SessionDep, user: CurrentUser):
     attempt = _get_attempt_or_404(session, attempt_id)
+    perms = user_permissions(user, session)
+    is_owner = attempt.user_id == user.id
+    if not ("candidates.view" in perms or (is_owner and "report.view_own" in perms)):
+        raise HTTPException(status_code=403, detail="Not allowed")
     scores = session.exec(select(Score).where(Score.attempt_id == attempt_id)).all()
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
     audio_by_item = {r.item_id: r.audio_path for r in responses if r.audio_path}
@@ -356,9 +393,10 @@ def get_report(attempt_id: str, session: SessionDep):
 
 
 @app.get("/api/attempts")
-def list_attempts(session: SessionDep):
+def list_attempts(session: SessionDep, user=Depends(require("candidates.view"))):
     attempts = session.exec(select(Attempt)).all()
     return [
-        {"attempt_id": a.id, "name": a.name, "status": a.status, "created_at": a.created_at}
+        {"attempt_id": a.id, "name": a.name, "status": a.status,
+         "created_at": a.created_at, "user_id": a.user_id}
         for a in attempts
     ]

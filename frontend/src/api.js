@@ -1,51 +1,71 @@
-async function request(path, options) {
-  const res = await fetch(path, options)
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`${res.status} ${path}: ${body}`)
+export class ApiError extends Error {
+  constructor(status, path, body) {
+    super(`${status} ${path}: ${body}`)
+    this.status = status
   }
+}
+
+async function request(path, options = {}) {
+  const res = await fetch(path, { credentials: 'include', ...options })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    if (res.status === 401) window.dispatchEvent(new CustomEvent('auth:logout'))
+    throw new ApiError(res.status, path, body)
+  }
+  if (res.status === 204) return null
   return res.json()
 }
 
-export function getAttemptItems(attemptId) {
-  return request(`/api/attempts/${attemptId}/items`)
-}
+const json = (method, body) => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+})
 
-export function createAttempt(name) {
-  return request('/api/attempts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  })
-}
+// --- auth ---
+export const signup = (b) => request('/api/auth/signup', json('POST', b))
+export const login = (b) => request('/api/auth/login', json('POST', b))
+export const logout = () => request('/api/auth/logout', { method: 'POST' })
+export const getMe = () => request('/api/auth/me')
 
-export function submitResponse(attemptId, itemId, text) {
-  return request(`/api/attempts/${attemptId}/response`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ item_id: itemId, text }),
-  })
-}
+// --- candidate ---
+export const putProfile = (b) => request('/api/candidate/profile', json('PUT', b))
+export const getMyAttempts = () => request('/api/me/attempts')
+
+// --- admin ---
+export const adminListUsers = () => request('/api/admin/users')
+export const adminCreateUser = (b) => request('/api/admin/users', json('POST', b))
+export const adminPatchUser = (id, b) => request(`/api/admin/users/${id}`, json('PATCH', b))
+export const adminListRoles = () => request('/api/admin/roles')
+export const adminCreateRole = (b) => request('/api/admin/roles', json('POST', b))
+export const adminPatchRole = (id, b) => request(`/api/admin/roles/${id}`, json('PATCH', b))
+export const adminDeleteRole = (id) => request(`/api/admin/roles/${id}`, { method: 'DELETE' })
+export const adminListPermissions = () => request('/api/admin/permissions')
+
+// --- attempts (unchanged behaviour, now credentialed) ---
+export const getAttemptItems = (attemptId) => request(`/api/attempts/${attemptId}/items`)
+export const createAttempt = () => request('/api/attempts', json('POST', {}))
+export const submitResponse = (attemptId, itemId, text) =>
+  request(`/api/attempts/${attemptId}/response`, json('POST', { item_id: itemId, text }))
+export const submitAttempt = (attemptId) =>
+  request(`/api/attempts/${attemptId}/submit`, { method: 'POST' })
+export const getReport = (attemptId) => request(`/api/attempts/${attemptId}/report`)
+export const listAttempts = () => request('/api/attempts')
 
 export async function uploadAudio(attemptId, itemId, blob, mimeType) {
   const ext = mimeType.includes('webm') ? 'webm' : 'mp4'
   const form = new FormData()
   form.append('item_id', itemId)
   form.append('file', blob, `${itemId}.${ext}`)
-  const res = await fetch(`/api/attempts/${attemptId}/audio`, { method: 'POST', body: form })
+  const res = await fetch(`/api/attempts/${attemptId}/audio`, {
+    method: 'POST', body: form, credentials: 'include',
+  })
   if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`${res.status} audio upload: ${body}`)
+    const body = await res.text().catch(() => '')
+    if (res.status === 401) window.dispatchEvent(new CustomEvent('auth:logout'))
+    throw new ApiError(res.status, 'audio upload', body)
   }
   return res.json()
-}
-
-export function submitAttempt(attemptId) {
-  return request(`/api/attempts/${attemptId}/submit`, { method: 'POST' })
-}
-
-export function getReport(attemptId) {
-  return request(`/api/attempts/${attemptId}/report`)
 }
 
 // Objective sections score synchronously, but audio transcription + the LLM
@@ -69,8 +89,4 @@ export async function pollReport(attemptId, { intervalMs = 2000, timeoutMs = 300
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
-}
-
-export function listAttempts() {
-  return request('/api/attempts')
 }

@@ -26,6 +26,8 @@ def client(monkeypatch):
     main._load_bank()
     with TestClient(main.app) as c:
         c._engine = engine
+        from tests.conftest import authenticate_candidate
+        authenticate_candidate(c)
         yield c
     main.app.dependency_overrides.clear()
 
