@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   adminCreateRole, adminCreateUser, adminDeleteRole, adminListPermissions,
   adminListRoles, adminListUsers, adminPatchRole, adminPatchUser,
+  adminDismissPasswordResetRequest, adminListPasswordResetRequests,
 } from '../api'
+import { Link } from 'react-router-dom'
 
 function Field({ label, children }) {
   return (
@@ -21,7 +23,7 @@ export default function Admin() {
     <div className="max-w-5xl mx-auto p-6 flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Admin</h1>
       <div className="flex gap-2 border-b">
-        {(['users', 'roles']).map((t) => (
+        {(['users', 'roles', 'password requests']).map((t) => (
           <button
             key={t}
             type="button"
@@ -32,7 +34,10 @@ export default function Admin() {
           </button>
         ))}
       </div>
-      {tab === 'users' ? <UsersTab /> : <RolesTab />}
+      {tab === 'users' && <UsersTab />}
+      {tab === 'roles' && <RolesTab />}
+      {tab === 'password requests' && <PasswordRequestsTab />}
+      <Link to="/recruiter-preview" className="self-start rounded-lg border border-blue-700 px-3 py-2 text-sm font-medium text-blue-800 hover:bg-blue-50">Preview recruiter workspace</Link>
     </div>
   )
 }
@@ -253,4 +258,17 @@ function RolesTab() {
       </div>
     </div>
   )
+}
+
+function PasswordRequestsTab() {
+  const [requests, setRequests] = useState([])
+  const [message, setMessage] = useState(null)
+  const load = useCallback(async () => { try { setRequests(await adminListPasswordResetRequests()) } catch (e) { setMessage(e.message) } }, [])
+  useEffect(() => { load() }, [load])
+  const dismiss = async (id) => { try { await adminDismissPasswordResetRequest(id); setMessage('Request dismissed.'); await load() } catch (e) { setMessage(e.message) } }
+  return <div className="flex flex-col gap-4">
+    <p className="text-sm text-gray-600">Reset a matching account’s password from the Users tab; doing so completes its pending request and revokes existing sessions.</p>
+    {message && <p role="status" className="text-sm text-gray-700">{message}</p>}
+    {!requests.length ? <p className="text-sm text-gray-500">No active password requests.</p> : <div className="divide-y border">{requests.map((request) => <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm"><div><p className="font-medium">{request.email}</p><p className="text-gray-500">{request.user ? `${request.user.display_name} · ${request.user.role.name}` : 'No matching account'} · requested {new Date(request.created_at).toLocaleDateString()} · expires {new Date(request.expires_at).toLocaleDateString()}</p></div><button type="button" onClick={() => dismiss(request.id)} className="rounded border border-gray-400 px-2 py-1 text-gray-700 hover:bg-gray-50">Dismiss</button></div>)}</div>}
+  </div>
 }

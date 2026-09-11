@@ -1,5 +1,5 @@
 from sqlmodel import Session, select
-from models import Attempt, Score
+from models import Attempt, Response, Score
 from tests.conftest import make_user
 
 
@@ -48,3 +48,25 @@ def test_report_includes_speaking_item_metadata(api):
     assert speaking["evidence"]["item_type"] == "read_aloud"
     assert speaking["evidence"]["reference_text"]
     assert "delayed delivery" in speaking["evidence"]["reference_text"]
+
+
+def test_recording_requires_attempt_access(api, monkeypatch, tmp_path):
+    import routes.attempts as attempt_routes
+
+    aid = _finished_attempt(api, "audio-owner@x.com")
+    audio_root = tmp_path / "audio"
+    recording = audio_root / aid / "s1.webm"
+    recording.parent.mkdir(parents=True)
+    recording.write_bytes(b"recording")
+    monkeypatch.setattr(attempt_routes, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(attempt_routes, "AUDIO_DIR", audio_root)
+    with Session(api._engine) as s:
+        s.add(Response(attempt_id=aid, item_id="s1", audio_path=f"audio/{aid}/s1.webm"))
+        s.commit()
+
+    assert api.get(f"/api/attempts/{aid}/audio/s1").status_code == 200
+    assert api.get(f"/audio/{aid}/s1.webm").status_code == 404
+
+    api.cookies.clear()
+    _finished_attempt(api, "audio-stranger@x.com")
+    assert api.get(f"/api/attempts/{aid}/audio/s1").status_code == 403

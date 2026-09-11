@@ -1,10 +1,12 @@
 # backend/admin.py
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from db import get_session
-from models import Permission, Role, RolePermission, User
+from models import PasswordResetRequest, Permission, Role, RolePermission, SessionToken, User
 from rbac import require
 from security import hash_password
 
@@ -72,9 +74,74 @@ def patch_user(user_id: str, payload: PatchUser, admin: User = AdminDep,
         user.is_active = payload.is_active
     if payload.password is not None:
         user.password_hash = hash_password(payload.password)
+        # A password reset is a security event. Existing sessions must not
+        # remain valid after it, including a session an attacker may hold.
+        for token in session.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all():
+            session.delete(token)
+        _complete_password_requests_for_user(session, user.id, admin.id)
     session.add(user)
     session.commit()
     return _user_dict(user, session)
+
+
+def _request_dict(row: PasswordResetRequest, session: Session) -> dict:
+    user = session.get(User, row.user_id) if row.user_id else None
+    return {
+        "id": row.id, "email": row.email, "status": row.status,
+        "created_at": row.created_at, "expires_at": row.expires_at,
+        "user": _user_dict(user, session) if user else None,
+        "resolved_by": row.resolved_by, "resolved_at": row.resolved_at,
+    }
+
+
+def _complete_password_requests_for_user(session: Session, user_id: str, admin_id: str) -> None:
+    now = datetime.now(timezone.utc)
+    for row in session.exec(select(PasswordResetRequest).where(
+        PasswordResetRequest.user_id == user_id,
+        PasswordResetRequest.status == "pending",
+    )).all():
+        row.status = "completed"
+        row.resolved_by = admin_id
+        row.resolved_at = now
+        session.add(row)
+
+
+@router.get("/password-reset-requests")
+def list_password_reset_requests(admin: User = AdminDep, session: Session = Depends(get_session)):
+    now = datetime.now(timezone.utc)
+    rows = session.exec(select(PasswordResetRequest).where(
+        PasswordResetRequest.status == "pending",
+        PasswordResetRequest.expires_at > now,
+    ).order_by(PasswordResetRequest.created_at.desc())).all()
+    return [_request_dict(row, session) for row in rows]
+
+
+@router.post("/password-reset-requests/{request_id}/complete")
+def complete_password_reset_request(request_id: str, admin: User = AdminDep,
+                                    session: Session = Depends(get_session)):
+    row = session.get(PasswordResetRequest, request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Password request not found")
+    if row.status != "pending":
+        raise HTTPException(status_code=409, detail="Password request is already resolved")
+    row.status, row.resolved_by, row.resolved_at = "completed", admin.id, datetime.now(timezone.utc)
+    session.add(row)
+    session.commit()
+    return _request_dict(row, session)
+
+
+@router.post("/password-reset-requests/{request_id}/dismiss")
+def dismiss_password_reset_request(request_id: str, admin: User = AdminDep,
+                                   session: Session = Depends(get_session)):
+    row = session.get(PasswordResetRequest, request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Password request not found")
+    if row.status != "pending":
+        raise HTTPException(status_code=409, detail="Password request is already resolved")
+    row.status, row.resolved_by, row.resolved_at = "dismissed", admin.id, datetime.now(timezone.utc)
+    session.add(row)
+    session.commit()
+    return _request_dict(row, session)
 
 
 class CreateRole(BaseModel):

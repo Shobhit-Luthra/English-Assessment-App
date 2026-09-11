@@ -83,3 +83,15 @@ class SessionToken(SQLModel, table=True):
     user_id: str = Field(foreign_key="user.id", index=True)
     created_at: datetime = Field(default_factory=_now)
     expires_at: datetime
+
+
+class PasswordResetRequest(SQLModel, table=True):
+    """An admin-handled recovery request; this is deliberately not a reset token."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    email: str = Field(index=True)
+    user_id: Optional[str] = Field(default=None, foreign_key="user.id", index=True)
+    status: str = Field(default="pending", index=True)  # pending | completed | dismissed
+    created_at: datetime = Field(default_factory=_now)
+    expires_at: datetime
+    resolved_by: Optional[str] = Field(default=None, foreign_key="user.id")
+    resolved_at: Optional[datetime] = None

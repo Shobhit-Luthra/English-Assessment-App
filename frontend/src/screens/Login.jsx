@@ -57,7 +57,7 @@ export default function Login() {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label htmlFor="password" className="text-sm font-medium">Password</label>
-            <span className="text-xs text-gray-400">8+ characters recommended</span>
+            <Link to="/forgot-password" className="text-xs font-medium text-blue-700 hover:underline">Forgot password?</Link>
           </div>
           <input
             id="password" type="password" required value={password}

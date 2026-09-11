@@ -17,6 +17,9 @@ WINDOW_SECONDS = 900
 
 # key -> list[float] of failure timestamps
 _FAILURES: dict[str, list[float]] = {}
+_RESET_REQUESTS: dict[str, list[float]] = {}
+RESET_REQUEST_MAX = 5
+RESET_REQUEST_WINDOW_SECONDS = 3600
 
 
 class ThrottledError(Exception):
@@ -51,8 +54,6 @@ def _recent(key: str) -> list[float]:
 
 
 def check_login_allowed(key: str) -> None:
-    if "|127.0.0.1" in key or "|::1" in key:
-        return
     hits = _recent(key)
     if len(hits) >= MAX_FAILURES:
         retry_after = int(WINDOW_SECONDS - (time.monotonic() - hits[0])) + 1
@@ -70,4 +71,21 @@ def reset_login_failures(key: str) -> None:
 
 def clear_throttles() -> None:
     _FAILURES.clear()
+    _RESET_REQUESTS.clear()
+
+
+def check_reset_request_allowed(key: str) -> None:
+    cutoff = time.monotonic() - RESET_REQUEST_WINDOW_SECONDS
+    hits = [t for t in _RESET_REQUESTS.get(key, []) if t >= cutoff]
+    if hits:
+        _RESET_REQUESTS[key] = hits
+    else:
+        _RESET_REQUESTS.pop(key, None)
+    if len(hits) >= RESET_REQUEST_MAX:
+        retry_after = int(RESET_REQUEST_WINDOW_SECONDS - (time.monotonic() - hits[0])) + 1
+        raise ThrottledError(max(retry_after, 1))
+
+
+def record_reset_request(key: str) -> None:
+    _RESET_REQUESTS.setdefault(key, []).append(time.monotonic())
 

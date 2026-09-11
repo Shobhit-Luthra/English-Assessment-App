@@ -10,6 +10,7 @@ import Analytics from './screens/Analytics'
 import Landing from './screens/Landing'
 import Login from './screens/Login'
 import Profile from './screens/Profile'
+import PasswordRecovery from './screens/PasswordRecovery'
 import Recruiter from './screens/Recruiter'
 import Report from './screens/Report'
 import Results from './screens/Results'
@@ -87,12 +88,18 @@ function Dashboard() {
   return <Recruiter onOpenReport={(attemptId) => navigate(`/report/${attemptId}`)} />
 }
 
+function RecruiterPreview({ analytics = false }) {
+  const navigate = useNavigate()
+  return analytics ? <Analytics /> : <Recruiter onOpenReport={(attemptId) => navigate(`/report/${attemptId}`)} />
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/forgot-password" element={<PasswordRecovery />} />
       <Route path="/profile" element={<RequireAuth permission="test.take"><AppShell><Profile /></AppShell></RequireAuth>} />
       <Route path="/results" element={<RequireAuth permission="test.take"><AppShell><Results /></AppShell></RequireAuth>} />
       <Route path="/test" element={<RequireAuth permission="test.take"><AppShell><CandidateFlow /></AppShell></RequireAuth>} />
@@ -100,6 +107,8 @@ function AppRoutes() {
       <Route path="/dashboard" element={<RequireAuth permission="candidates.view"><AppShell><Dashboard /></AppShell></RequireAuth>} />
       <Route path="/analytics" element={<RequireAuth permission="analytics.view"><AppShell><Analytics /></AppShell></RequireAuth>} />
       <Route path="/admin" element={<RequireAuth permission="roles.manage"><AppShell><Admin /></AppShell></RequireAuth>} />
+      <Route path="/recruiter-preview" element={<RequireAuth permission="roles.manage"><AppShell recruiterPreview><RecruiterPreview /></AppShell></RequireAuth>} />
+      <Route path="/recruiter-preview/analytics" element={<RequireAuth permission="roles.manage"><AppShell recruiterPreview><RecruiterPreview analytics /></AppShell></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

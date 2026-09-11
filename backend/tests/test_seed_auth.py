@@ -43,3 +43,37 @@ def test_ensure_default_admin_creates_one(monkeypatch):
         seed_auth.ensure_default_admin(s)  # idempotent
         admins = s.exec(select(User).where(User.email == "boss@corp.com")).all()
         assert len(admins) == 1
+
+
+def test_bootstrap_accounts_keep_passwords_changed_after_first_start(monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAIL", "boss@corp.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "first-admin-password")
+    monkeypatch.setenv("DEMO_SEED_USERS", "1")
+    with _session() as s:
+        seed_auth.seed_auth(s)
+        seed_auth.ensure_default_admin(s)
+        admin = s.exec(select(User).where(User.email == "boss@corp.com")).one()
+        recruiter = s.exec(select(User).where(User.email == "recruiter@example.com")).one()
+        admin.password_hash = seed_auth.hash_password("changed-admin-password")
+        recruiter.password_hash = seed_auth.hash_password("changed-recruiter-password")
+        s.add(admin)
+        s.add(recruiter)
+        s.commit()
+
+        seed_auth.ensure_default_admin(s)
+        s.refresh(admin)
+        s.refresh(recruiter)
+        from security import verify_password
+        assert verify_password("changed-admin-password", admin.password_hash)
+        assert verify_password("changed-recruiter-password", recruiter.password_hash)
+
+
+def test_bootstrap_requires_explicit_credentials_outside_demo(monkeypatch):
+    monkeypatch.delenv("ADMIN_EMAIL", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("DEMO_SEED_USERS", raising=False)
+    with _session() as s:
+        seed_auth.seed_auth(s)
+        import pytest
+        with pytest.raises(RuntimeError, match="ADMIN_EMAIL"):
+            seed_auth.ensure_default_admin(s)

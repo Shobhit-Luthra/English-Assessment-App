@@ -11,6 +11,8 @@ from models import Attempt, Score
 
 @pytest.fixture
 def client(monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@test.local")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
     import scoring.pipeline
 
     engine = create_engine(

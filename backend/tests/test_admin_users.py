@@ -1,6 +1,6 @@
 from sqlmodel import Session, select
 from tests.conftest import make_user
-from models import Role
+from models import Role, SessionToken
 
 
 def _admin(api):
@@ -45,3 +45,20 @@ def test_admin_resets_password(api):
     api.cookies.clear()
     assert api.post("/api/auth/login",
                     json={"email": "reset-me@x.com", "password": "brandnewpw99"}).status_code == 200
+
+
+def test_password_reset_revokes_existing_sessions(api):
+    _admin(api)
+    uid = api.post("/api/admin/users", json={
+        "email": "session-reset@x.com", "password": "longenough12",
+        "display_name": "R", "role_id": api.get("/api/admin/roles").json()[0]["id"],
+    }).json()["id"]
+
+    api.cookies.clear()
+    api.post("/api/auth/login", json={"email": "session-reset@x.com", "password": "longenough12"})
+    old_token = api.cookies.get("session")
+    api.cookies.clear()
+    api.post("/api/auth/login", json={"email": "admin@x.com", "password": "longenough12"})
+    assert api.patch(f"/api/admin/users/{uid}", json={"password": "brandnewpw99"}).status_code == 200
+    with Session(api._engine) as s:
+        assert s.get(SessionToken, old_token) is None

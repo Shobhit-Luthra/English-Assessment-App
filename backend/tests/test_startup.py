@@ -92,6 +92,9 @@ def test_startup_fails_attempts_left_scoring_by_a_crash(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from models import Attempt
 
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@test.local")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
+
     test_engine = create_engine(
         f"sqlite:///{tmp_path / 'stuck.db'}", connect_args={"check_same_thread": False}
     )

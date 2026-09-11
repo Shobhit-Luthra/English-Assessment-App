@@ -8,11 +8,13 @@ in a background task started at submit time.
 import logging
 import os
 import random
+import secrets
 import subprocess
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select, update
 
@@ -45,6 +47,7 @@ _ALLOWED_AUDIO_TYPES = {
     "audio/mp4": "mp4",
 }
 _MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB - generous for a <=45s clip
+_MAX_AUDIO_DURATION_GRACE_S = 5
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -198,6 +201,14 @@ def _probe_duration_ms(path: Path) -> int:
     return int(float(result.stdout.strip()) * 1000)
 
 
+def _has_expected_audio_signature(data: bytes, ext: str) -> bool:
+    """Reject obvious content-type spoofing before media tooling parses it."""
+    if ext == "webm":
+        return data.startswith(b"\x1a\x45\xdf\xa3")
+    # ISO base media files carry the ftyp box after their four-byte size.
+    return len(data) >= 12 and data[4:8] == b"ftyp"
+
+
 @router.post("/api/attempts/{attempt_id}/audio")
 async def upload_audio(
     attempt_id: str,
@@ -221,18 +232,29 @@ async def upload_audio(
         raise HTTPException(status_code=413, detail="Audio file too large")
     if len(data) == 0:
         raise HTTPException(status_code=400, detail="Empty audio file")
+    if not _has_expected_audio_signature(data, ext):
+        raise HTTPException(status_code=400, detail="Audio file does not match its declared type")
 
     attempt_dir = AUDIO_DIR / attempt_id
     attempt_dir.mkdir(parents=True, exist_ok=True)
     # item_id is checked against the server's own item whitelist above, so
     # this path is never attacker-controlled.
     dest = attempt_dir / f"{item_id}.{ext}"
-    dest.write_bytes(data)
+    pending = dest.with_suffix(f"{dest.suffix}.{secrets.token_hex(8)}.upload")
+    pending.write_bytes(data)
 
     try:
-        duration_ms = _probe_duration_ms(dest)
+        duration_ms = _probe_duration_ms(pending)
     except (subprocess.SubprocessError, ValueError, OSError):
-        duration_ms = None
+        pending.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Audio file could not be decoded")
+
+    item = _lookup_item(item_id)
+    max_duration_ms = (item["time_limit_s"] + _MAX_AUDIO_DURATION_GRACE_S) * 1000
+    if duration_ms <= 0 or duration_ms > max_duration_ms:
+        pending.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Audio duration is outside the allowed limit")
+    pending.replace(dest)
 
     existing = session.exec(
         select(Response).where(Response.attempt_id == attempt_id, Response.item_id == item_id)
@@ -252,6 +274,26 @@ async def upload_audio(
         )
     session.commit()
     return {"ok": True, "duration_ms": duration_ms}
+
+
+@router.get("/api/attempts/{attempt_id}/audio/{item_id}")
+def get_attempt_audio(attempt_id: str, item_id: str, session: SessionDep, user: CurrentUser):
+    """Stream a recording only to its owner or an authorized recruiter."""
+    attempt = _get_attempt_or_404(session, attempt_id)
+    perms = user_permissions(user, session)
+    if not (attempt.user_id == user.id or "candidates.view" in perms):
+        raise HTTPException(status_code=403, detail="Not allowed")
+    response = session.exec(
+        select(Response).where(Response.attempt_id == attempt_id, Response.item_id == item_id)
+    ).first()
+    if response is None or not response.audio_path:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    path = (BASE_DIR / response.audio_path).resolve()
+    audio_root = AUDIO_DIR.resolve()
+    if audio_root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail="Recording not found")
+    media_type = "audio/webm" if path.suffix == ".webm" else "audio/mp4"
+    return FileResponse(path, media_type=media_type, filename=path.name)
 
 
 def _items_by_section(attempt: Attempt) -> dict[str, list[dict]]:
@@ -346,7 +388,7 @@ def get_report(attempt_id: str, session: SessionDep, user: CurrentUser):
     def _audio_url(evidence: dict) -> str | None:
         item_id = evidence.get("item_id")
         path = audio_by_item.get(item_id)
-        return f"/{path.replace(chr(92), '/')}" if path else None
+        return f"/api/attempts/{attempt.id}/audio/{item_id}" if path and item_id else None
 
     def _response_text(evidence: dict) -> str | None:
         return text_by_item.get(evidence.get("item_id"))

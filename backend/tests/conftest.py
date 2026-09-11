@@ -43,10 +43,13 @@ def auth_engine(monkeypatch):
 
 
 @pytest.fixture
-def api(auth_engine):
+def api(auth_engine, monkeypatch):
     import db
     import main
     from bank import load_bank
+
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@test.local")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
 
     def _get_session():
         with Session(auth_engine) as s:

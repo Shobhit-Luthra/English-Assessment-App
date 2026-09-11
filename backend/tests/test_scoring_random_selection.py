@@ -22,6 +22,8 @@ _LETTERS = ["a", "b", "c", "d", "e", "f"]
 
 @pytest.fixture
 def client(monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@test.local")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
     import scoring.pipeline
 
     engine = create_engine(

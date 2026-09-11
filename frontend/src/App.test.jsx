@@ -67,6 +67,17 @@ test('a recruiter lands on the dashboard', async () => {
   await waitFor(() => expect(screen.getByText(/no candidates have taken the test yet/i)).toBeInTheDocument())
 })
 
+test('an admin can preview recruiter navigation without admin controls', async () => {
+  getMe.mockResolvedValue({
+    email: 'a@x.com', permissions: ['roles.manage', 'candidates.view', 'analytics.view'],
+    role: { name: 'admin' }, profile: null,
+  })
+  renderAt('/recruiter-preview')
+  await waitFor(() => expect(screen.getByText(/previewing recruiter workspace/i)).toBeInTheDocument())
+  expect(screen.getByRole('link', { name: /return to admin/i })).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+})
+
 test('an unauthenticated visitor to /admin is redirected to login', async () => {
   getMe.mockRejectedValue(Object.assign(new Error('401'), { status: 401 }))
   renderAt('/admin')

@@ -13,6 +13,8 @@ from models import Attempt
 
 @pytest.fixture
 def client(monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@test.local")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )

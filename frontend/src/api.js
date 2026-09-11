@@ -6,7 +6,10 @@ export class ApiError extends Error {
 }
 
 async function request(path, options = {}) {
-  const res = await fetch(path, { credentials: 'include', ...options })
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = { ...(options.headers || {}) }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) headers['X-Requested-With'] = 'XMLHttpRequest'
+  const res = await fetch(path, { credentials: 'include', ...options, headers })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     if (res.status === 401) window.dispatchEvent(new CustomEvent('auth:logout'))
@@ -27,6 +30,7 @@ export const signup = (b) => request('/api/auth/signup', json('POST', b))
 export const login = (b) => request('/api/auth/login', json('POST', b))
 export const logout = () => request('/api/auth/logout', { method: 'POST' })
 export const getMe = () => request('/api/auth/me')
+export const requestPasswordReset = (b) => request('/api/auth/password-reset-requests', json('POST', b))
 
 // --- candidate ---
 export const putProfile = (b) => request('/api/candidate/profile', json('PUT', b))
@@ -42,6 +46,8 @@ export const adminCreateRole = (b) => request('/api/admin/roles', json('POST', b
 export const adminPatchRole = (id, b) => request(`/api/admin/roles/${id}`, json('PATCH', b))
 export const adminDeleteRole = (id) => request(`/api/admin/roles/${id}`, { method: 'DELETE' })
 export const adminListPermissions = () => request('/api/admin/permissions')
+export const adminListPasswordResetRequests = () => request('/api/admin/password-reset-requests')
+export const adminDismissPasswordResetRequest = (id) => request(`/api/admin/password-reset-requests/${id}/dismiss`, json('POST', {}))
 
 // --- attempts (unchanged behaviour, now credentialed) ---
 export const getAttemptItems = (attemptId) => request(`/api/attempts/${attemptId}/items`)
@@ -69,7 +75,7 @@ export async function uploadAudio(attemptId, itemId, blob, mimeType) {
   form.append('item_id', itemId)
   form.append('file', blob, `${itemId}.${ext}`)
   const res = await fetch(`/api/attempts/${attemptId}/audio`, {
-    method: 'POST', body: form, credentials: 'include',
+    method: 'POST', body: form, credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' },
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')

@@ -50,7 +50,7 @@ On startup the backend:
 - creates `backend/demo.db` (SQLite) and the schema if missing;
 - seeds the permission catalogue and the three system roles (`admin`,
   `recruiter`, `candidate`);
-- creates the bootstrap accounts below (and resets their passwords);
+- creates the configured bootstrap admin only when it does not already exist;
 - marks any attempt left in `scoring` by a previous crash as `error` so it
   can be re-scored;
 - warms Whisper and the Ollama model on a background thread.
@@ -60,15 +60,26 @@ Check it: `curl http://localhost:8000/api/health` →
 
 ### Bootstrap accounts
 
-| Account | Email | Password | Created |
-|---|---|---|---|
-| Admin | `ADMIN_EMAIL` (default `admin@example.com`) | `ADMIN_PASSWORD` (default `admin12345`) | always |
-| Demo recruiter | `recruiter@example.com` | `recruiter12345` | always |
+Set these before the first normal startup:
 
-Both passwords are re-applied on **every** startup, so a password changed
-through the Admin screen reverts at the next restart. This is a local-demo
-convenience; set `ADMIN_PASSWORD` for anything that is not a throwaway run,
-and treat the demo recruiter as such.
+```powershell
+$env:ADMIN_EMAIL = 'admin@example.com'
+$env:ADMIN_PASSWORD = 'use-a-unique-long-password-here'
+uvicorn main:app --reload --port 8000
+```
+
+The configured administrator is created only if absent, so a password changed
+through the Admin screen is retained across restarts. The app refuses to start
+without these variables unless local demo accounts are explicitly enabled:
+
+```powershell
+$env:DEMO_SEED_USERS = '1'
+uvicorn main:app --reload --port 8000
+```
+
+Demo mode creates `admin@example.com` / `admin12345` and
+`recruiter@example.com` / `recruiter12345`; never enable it outside a local
+throwaway database.
 
 Candidates create their own accounts through **Sign up** on the landing page.
 
@@ -76,10 +87,13 @@ Candidates create their own accounts through **Sign up** on the landing page.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `ADMIN_EMAIL` | `admin@example.com` | Bootstrap admin email |
-| `ADMIN_PASSWORD` | `admin12345` | Bootstrap admin password (re-applied at every startup) |
+| `ADMIN_EMAIL` | required | Bootstrap admin email |
+| `ADMIN_PASSWORD` | required | Bootstrap admin password, used only when the admin account is first created |
+| `DEMO_SEED_USERS` | unset | Set to `1` only for a local throwaway demo; creates known demo admin and recruiter accounts |
 | `OLLAMA_JUDGE_MODEL` | `qwen3:8b` | Ollama model used as the speaking/writing judge. Thinking is disabled for the call; on an Ollama server too old to accept that option the call is retried without it |
 | `ASSESSMENT_ALLOW_FIXED_SELECTION` | unset | Set to `1` only when running `seed_attempts.py`; lets a client pin the item set instead of drawing it randomly |
+| `APP_ALLOWED_ORIGINS` | unset | Comma-separated production browser origins allowed to make state-changing API requests; configure this when the UI is hosted separately from the API |
+| `APP_ENV` | `development` | Set to `production` to require an approved `Origin` for every state-changing request |
 
 ### Schema changes
 

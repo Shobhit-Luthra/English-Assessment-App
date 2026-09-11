@@ -95,3 +95,20 @@ def test_login_throttles_per_ip_across_emails(api, monkeypatch):
 def test_login_rejects_overlong_password(api):
     r = api.post("/api/auth/login", json={"email": "x@y.com", "password": "z" * 500})
     assert r.status_code == 422
+
+
+def test_cross_site_state_change_is_rejected(api):
+    r = api.post(
+        "/api/auth/signup",
+        json={"email": "cross@site.com", "password": "longenough12", "display_name": "Cross"},
+        headers={"Origin": "https://attacker.example", "Sec-Fetch-Site": "cross-site"},
+    )
+    assert r.status_code == 403
+
+
+def test_production_rejects_state_changes_without_an_origin(api, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    r = api.post("/api/auth/signup", json={
+        "email": "no-origin@site.com", "password": "longenough12", "display_name": "No Origin",
+    })
+    assert r.status_code == 403
