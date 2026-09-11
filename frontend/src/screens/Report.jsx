@@ -26,10 +26,54 @@ const SPEAKING_LABELS = {
   situational: 'Situational',
 }
 
+// Order and labels for the per-item rubric breakdown. Keys match the
+// ``evidence.scores`` object the backend stores for judged items.
+const SPEAKING_SUBSKILLS = [
+  ['fluency', 'Fluency'],
+  ['grammar', 'Grammar'],
+  ['vocabulary', 'Vocabulary'],
+  ['task_fulfilment', 'Task'],
+]
+const WRITING_SUBSKILLS = [
+  ['grammar', 'Grammar'],
+  ['vocabulary', 'Vocabulary'],
+  ['tone_appropriateness', 'Tone'],
+  ['task_fulfilment', 'Task'],
+]
+
 function bandBadgeClass(band) {
   if (band >= 5) return 'bg-green-100 text-green-800'
   if (band === 4) return 'bg-yellow-100 text-yellow-800'
   return 'bg-red-100 text-red-800'
+}
+
+function BandBadge({ band, missing }) {
+  if (missing) {
+    return (
+      <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-500">
+        Not attempted
+      </span>
+    )
+  }
+  return (
+    <span className={`rounded-full px-3 py-1 font-mono text-sm ${bandBadgeClass(band)}`}>
+      Band {band} / 6
+    </span>
+  )
+}
+
+function SubSkills({ itemId, scores, labels }) {
+  if (!scores) return null
+  return (
+    <dl data-testid={`subskills-${itemId}`} className="grid grid-cols-4 gap-2">
+      {labels.map(([key, label]) => (
+        <div key={key} className="rounded-md bg-gray-50 px-2 py-1.5 text-center">
+          <dt className="text-xs text-gray-500">{label}</dt>
+          <dd className="font-mono text-sm tabular-nums">{scores[key] ?? '-'}</dd>
+        </div>
+      ))}
+    </dl>
+  )
 }
 
 function Stat({ label, value }) {
@@ -45,6 +89,7 @@ function SpeakingCard({ score }) {
   const title = SPEAKING_LABELS[evidence.item_type] || 'Speaking'
   const section = evidence.item_id?.toUpperCase()
   const features = evidence.features
+  const missing = evidence.missing === true
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-4">
@@ -57,15 +102,21 @@ function SpeakingCard({ score }) {
             </span>
           )}
         </div>
-        <span className={`rounded-full px-3 py-1 font-mono text-sm ${bandBadgeClass(band)}`}>
-          Band {band} / 6
-        </span>
+        <BandBadge band={band} missing={missing} />
       </div>
+
+      {missing && (
+        <p className="text-sm text-gray-500">
+          No recording was submitted for this task, so it counts as the lowest band.
+        </p>
+      )}
 
       {audioUrl && (
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <audio controls src={audioUrl} className="w-full" />
       )}
+
+      <SubSkills itemId={evidence.item_id} scores={evidence.scores} labels={SPEAKING_SUBSKILLS} />
 
       {evidence.transcript && (
         <div className="rounded-md bg-gray-50 p-3">
@@ -74,7 +125,7 @@ function SpeakingCard({ score }) {
         </div>
       )}
 
-      {evidence.reference_text && (
+      {evidence.reference_text && !missing && (
         <div className="rounded-md border border-dashed border-gray-300 p-3">
           <p className="mb-1 text-xs font-medium text-gray-500">
             Expected (read aloud)
@@ -110,28 +161,63 @@ function SpeakingCard({ score }) {
   )
 }
 
-export default function Report({ report }) {
+function WritingCard({ score, compositeBand }) {
+  const { evidence } = score
+  const missing = evidence.missing === true
+  // The composite (all four sub-skills averaged) is the band recruiters see;
+  // fall back to the tone row for attempts scored before composites existed.
+  const band = compositeBand ?? score.band
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium">Email reply</h3>
+          {evidence.item_id && (
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-500">
+              {evidence.item_id.toUpperCase()}
+            </span>
+          )}
+        </div>
+        <BandBadge band={band} missing={missing} />
+      </div>
+      {missing && (
+        <p className="text-sm text-gray-500">
+          No text was submitted for this task, so it counts as the lowest band.
+        </p>
+      )}
+      <SubSkills itemId={evidence.item_id} scores={evidence.scores} labels={WRITING_SUBSKILLS} />
+      {score.response_text && (
+        <div className="rounded-md bg-gray-50 p-3">
+          <p className="mb-1 text-xs font-medium text-gray-500">What was written</p>
+          <p className="whitespace-pre-wrap text-sm text-gray-700">{score.response_text}</p>
+        </div>
+      )}
+      {evidence.justification && (
+        <p className="text-sm text-gray-800">{evidence.justification}</p>
+      )}
+    </div>
+  )
+}
+
+export default function Report({ report, onRescore, rescoreBusy = false, rescoreError = null }) {
   const byDim = Object.fromEntries(report.scores.map((s) => [s.dimension, s]))
   const speakingScores = report.scores
     .filter((s) => s.dimension.startsWith('speaking_fluency_'))
     .sort((a, b) => a.evidence.item_id.localeCompare(b.evidence.item_id))
+  const writingScores = report.scores.filter((s) => s.dimension === 'writing_tone')
 
   const cir = byDim.cir
   const rec = cir ? recommendation(cir.band) : null
 
-  const speakingFluencyAvg = speakingScores.length
-    ? speakingScores.reduce((sum, s) => sum + s.band, 0) / speakingScores.length
-    : 0
-
+  // Same five sections the recruiter directory and analytics report on, so a
+  // recruiter reading the chart and the list sees the same numbers.
   const radarBands = {
     grammar: byDim.grammar?.band ?? 0,
     listening: byDim.listening?.band ?? 0,
-    speaking_fluency: speakingFluencyAvg,
-    writing_tone: byDim.writing_tone?.band ?? 0,
-    situational_task_fulfilment: byDim.situational_task_fulfilment?.band ?? 0,
+    speaking: byDim.speaking?.band ?? 0,
+    writing: byDim.writing?.band ?? 0,
+    task_fulfilment: byDim.situational_task_fulfilment?.band ?? 0,
   }
-
-  const writing = byDim.writing_tone
 
   if (report.status === 'scoring') {
     return (
@@ -143,8 +229,22 @@ export default function Report({ report }) {
 
   if (report.status === 'error') {
     return (
-      <div className="max-w-md mx-auto p-6 text-center text-red-600">
-        Scoring failed: {report.error || 'unknown error'}
+      <div className="max-w-md mx-auto flex flex-col items-center gap-4 p-6 text-center">
+        <p className="text-lg font-medium text-red-700">Scoring failed</p>
+        <p className="text-sm text-gray-600">
+          {report.error_message || 'Scoring failed unexpectedly. A recruiter can re-run scoring.'}
+        </p>
+        {onRescore && (
+          <button
+            type="button"
+            onClick={onRescore}
+            disabled={rescoreBusy}
+            className="rounded-lg bg-blue-700 px-6 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+          >
+            {rescoreBusy ? 'Re-scoring…' : 'Re-score'}
+          </button>
+        )}
+        {rescoreError && <p className="text-sm text-red-600">{rescoreError}</p>}
       </div>
     )
   }
@@ -206,21 +306,16 @@ export default function Report({ report }) {
         </section>
       )}
 
-      {writing && (
-        <section className="flex flex-col gap-3">
+      {writingScores.length > 0 && (
+        <section className="flex flex-col gap-4">
           <h2 className="text-lg font-semibold">Writing</h2>
-          <div className="rounded-lg border p-4 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-medium">Tone Appropriateness</span>
-              <span className="font-mono text-lg">{writing.band} / 6</span>
-            </div>
-            {writing.response_text && (
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">{writing.response_text}</p>
-            )}
-            {writing.evidence.justification && (
-              <p className="text-sm text-gray-800">{writing.evidence.justification}</p>
-            )}
-          </div>
+          {writingScores.map((s) => (
+            <WritingCard
+              key={s.evidence.item_id ?? s.dimension}
+              score={s}
+              compositeBand={writingScores.length === 1 ? byDim.writing?.band : undefined}
+            />
+          ))}
         </section>
       )}
     </div>

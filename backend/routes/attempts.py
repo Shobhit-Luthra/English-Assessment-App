@@ -14,14 +14,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
-from bank import SELECTION_COUNTS, get_all_items, get_bank_by_section, get_item
+from bank import SELECTION_COUNTS, get_bank_by_section, get_item
 from db import get_session
 from models import Attempt, CandidateProfile, Response, Score
 from rbac import CurrentUser, require, user_permissions
 from scoring.objective import score_section
-from scoring.pipeline import run_scoring_pipeline
+from scoring.pipeline import ERROR_MESSAGES, ERROR_UNKNOWN, run_scoring_pipeline
 from selection import SelectionError, canonical_letter, option_permutations, select_items
 
 logger = logging.getLogger(__name__)
@@ -254,6 +254,14 @@ async def upload_audio(
     return {"ok": True, "duration_ms": duration_ms}
 
 
+def _items_by_section(attempt: Attempt) -> dict[str, list[dict]]:
+    by_section: dict[str, list[dict]] = {}
+    for item_id in attempt.item_ids:
+        item = _lookup_item(item_id)
+        by_section.setdefault(item["section"], []).append(item)
+    return by_section
+
+
 @router.post("/api/attempts/{attempt_id}/submit")
 def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep,
                    user=Depends(require("test.take"))):
@@ -261,10 +269,7 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
     if attempt.status != "in_progress":
         raise HTTPException(status_code=409, detail="Attempt already submitted")
 
-    attempt_items_by_section: dict[str, list[dict]] = {}
-    for item_id in attempt.item_ids:
-        item = _lookup_item(item_id)
-        attempt_items_by_section.setdefault(item["section"], []).append(item)
+    attempt_items_by_section = _items_by_section(attempt)
 
     responses = session.exec(select(Response).where(Response.attempt_id == attempt_id)).all()
     responses_by_item = {r.item_id: r.text for r in responses if r.text is not None}
@@ -288,9 +293,41 @@ def submit_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: 
     session.add(attempt)
     session.commit()
 
-    background_tasks.add_task(
-        run_scoring_pipeline, attempt_id, get_all_items(), attempt_items_by_section
-    )
+    background_tasks.add_task(run_scoring_pipeline, attempt_id, attempt_items_by_section)
+    return {"ok": True}
+
+
+# Objective sections are scored at /submit from the stored answers and never
+# depend on Whisper or the judge, so a re-score keeps them and recomputes the
+# rest.
+_OBJECTIVE_DIMENSIONS = {"grammar", "listening"}
+
+
+@router.post("/api/attempts/{attempt_id}/rescore")
+def rescore_attempt(attempt_id: str, background_tasks: BackgroundTasks, session: SessionDep,
+                    user=Depends(require("candidates.view"))):
+    attempt = _get_attempt_or_404(session, attempt_id)
+    attempt_items_by_section = _items_by_section(attempt)
+
+    # Atomic error -> scoring transition: two overlapping requests (a
+    # double-click on Re-score) must not both delete rows and queue a
+    # pipeline. Only the request whose UPDATE matched proceeds.
+    claimed = session.exec(
+        update(Attempt)
+        .where(Attempt.id == attempt_id, Attempt.status == "error")
+        .values(status="scoring", error=None)
+    ).rowcount
+    if claimed != 1:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Only failed attempts can be re-scored")
+
+    stale = session.exec(select(Score).where(Score.attempt_id == attempt_id)).all()
+    for row in stale:
+        if row.dimension not in _OBJECTIVE_DIMENSIONS:
+            session.delete(row)
+    session.commit()
+
+    background_tasks.add_task(run_scoring_pipeline, attempt_id, attempt_items_by_section)
     return {"ok": True}
 
 
@@ -324,11 +361,18 @@ def get_report(attempt_id: str, session: SessionDep, user: CurrentUser):
             return {}
         return {"item_type": item.get("type"), "reference_text": item.get("reference_text")}
 
+    # Attempts scored before errors were categorised hold raw exception text;
+    # never let that reach the client.
+    error = attempt.error
+    if error is not None and error not in ERROR_MESSAGES:
+        error = ERROR_UNKNOWN
+
     return {
         "attempt_id": attempt.id,
         "name": attempt.name,
         "status": attempt.status,
-        "error": attempt.error,
+        "error": error,
+        "error_message": ERROR_MESSAGES.get(error) if error else None,
         "scores": [
             {
                 "dimension": s.dimension,
@@ -340,13 +384,3 @@ def get_report(attempt_id: str, session: SessionDep, user: CurrentUser):
             for s in scores
         ],
     }
-
-
-@router.get("/api/attempts")
-def list_attempts(session: SessionDep, user=Depends(require("candidates.view"))):
-    attempts = session.exec(select(Attempt)).all()
-    return [
-        {"attempt_id": a.id, "name": a.name, "status": a.status,
-         "created_at": a.created_at, "user_id": a.user_id}
-        for a in attempts
-    ]

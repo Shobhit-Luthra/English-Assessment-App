@@ -1,7 +1,9 @@
 """Seeds 4 attempts at deliberately different proficiency levels through the
-real scoring pipeline (T3.7). Requires the backend running on :8000 and
-started with ASSESSMENT_ALLOW_FIXED_SELECTION=1 so the seed can pin a known
-9-item set (g1..s2) against which the proficiency answer maps are defined.
+real scoring pipeline (T3.7). This is how the recruiter dashboard and
+analytics get data on a fresh demo.db. Requires Ollama running, and the
+backend on :8000 started with ASSESSMENT_ALLOW_FIXED_SELECTION=1 so the seed
+can pin a known 9-item set (g1..s2) against which the proficiency answer maps
+are defined.
 
 Usage:
   ASSESSMENT_ALLOW_FIXED_SELECTION=1 .venv/Scripts/python -m uvicorn main:app   # terminal 1
@@ -78,9 +80,7 @@ def seed_one(client: httpx.Client, candidate: dict) -> str:
 
     client.put("/api/candidate/profile", json={"full_name": candidate["name"], "phone": "1234567890"})
 
-    resp = client.post(
-        "/api/attempts", json={"name": candidate["name"], "item_ids": SEED_ITEM_IDS}
-    )
+    resp = client.post("/api/attempts", json={"item_ids": SEED_ITEM_IDS})
     if resp.status_code != 200:
         raise RuntimeError(f"Failed to create attempt: {resp.status_code} {resp.text}")
     attempt_id = resp.json()["attempt_id"]
@@ -133,7 +133,10 @@ def main() -> None:
             report = wait_for_done(client, attempt_id)
             cir = next((s["band"] for s in report["scores"] if s["dimension"] == "cir"), None)
             results.append((candidate["name"], report["status"], cir))
-            print(f"{candidate['name']}: status={report['status']} cir={cir}")
+            line = f"{candidate['name']}: status={report['status']} cir={cir}"
+            if report["status"] == "error":
+                line += f" ({report.get('error_message') or report.get('error')})"
+            print(line)
 
         overall_bands = [r[2] for r in results if r[2] is not None]
         if overall_bands:

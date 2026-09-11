@@ -51,7 +51,9 @@ export const submitResponse = (attemptId, itemId, text) =>
 export const submitAttempt = (attemptId) =>
   request(`/api/attempts/${attemptId}/submit`, { method: 'POST' })
 export const getReport = (attemptId) => request(`/api/attempts/${attemptId}/report`)
-export const listAttempts = () => request('/api/attempts')
+export const rescoreAttempt = (attemptId) =>
+  request(`/api/attempts/${attemptId}/rescore`, { method: 'POST' })
+export const getHealth = () => request('/api/health')
 
 // --- recruiting ---
 export const listCandidates = () => request('/api/candidates')

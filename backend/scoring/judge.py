@@ -62,10 +62,15 @@ def build_prompt(writing_entries: list[dict], speaking_entries: list[dict]) -> s
     """
     rubric_text = RUBRIC_PATH.read_text(encoding="utf-8")
 
+    writing_ids = [e["item_id"] for e in writing_entries]
+    speaking_ids = [e["item_id"] for e in speaking_entries]
     sections = [
         "You are scoring English-language responses against the rubric below. "
         "Score intelligibility and language quality, never accent or regional "
-        "phonology. Return JSON only, matching the required schema exactly.",
+        "phonology. Return JSON only, matching the required schema exactly. "
+        f"Your output must contain exactly one writing entry for each of "
+        f"{writing_ids} and exactly one speaking entry for each of {speaking_ids}, "
+        "using those item_id values verbatim.",
         "## Rubric",
         rubric_text,
         "## Responses to score",
@@ -95,16 +100,25 @@ def build_prompt(writing_entries: list[dict], speaking_entries: list[dict]) -> s
 
 
 def call_judge(prompt: str) -> AttemptScores:
-    response = ollama.chat(
+    kwargs = dict(
         model=OLLAMA_MODEL,
         messages=[{"role": "user", "content": prompt}],
         format=AttemptScores.model_json_schema(),
-        # qwen3 is a thinking model: it spends most of its token budget
-        # reasoning before emitting the JSON, so the budget must be several
-        # times the expected output size or the response comes back empty.
-        options={"temperature": 0, "num_predict": 2400, "num_ctx": 8192},
+        # The JSON for one writing + one speaking item is a few hundred tokens;
+        # the budget only needs headroom for longer justifications.
+        options={"temperature": 0, "num_predict": 1200, "num_ctx": 8192},
         keep_alive="30m",
     )
+    try:
+        # qwen3 is a thinking model: left on, it spends its token budget
+        # reasoning before the JSON and the content comes back empty.
+        response = ollama.chat(think=False, **kwargs)
+    except ollama.ResponseError as e:
+        # Servers older than the ``think`` option reject the request outright;
+        # fall back to a plain call rather than fail every score.
+        if getattr(e, "status_code", None) != 400 or "think" not in str(e).lower():
+            raise
+        response = ollama.chat(**kwargs)
     return AttemptScores.model_validate_json(response["message"]["content"])
 
 

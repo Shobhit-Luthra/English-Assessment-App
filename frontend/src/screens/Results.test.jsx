@@ -44,3 +44,17 @@ test('asks candidates without a profile to set up details', async () => {
   )
   await waitFor(() => expect(screen.getByText(/set up your details/i)).toBeInTheDocument())
 })
+test('a failed attempt says scoring failed rather than pretending to score', async () => {
+  getMyProfile.mockResolvedValue({ full_name: 'Alice Chen', decision: 'pending' })
+  getMyAttempts.mockResolvedValue([
+    { attempt_id: 'a3', status: 'error', created_at: '2026-09-03T10:00:00Z', cir: null },
+  ])
+  render(
+    <MemoryRouter>
+      <Results />
+    </MemoryRouter>,
+  )
+  await waitFor(() => expect(screen.getByText(/scoring failed/i)).toBeInTheDocument())
+  expect(screen.queryByText(/scoring…/i)).not.toBeInTheDocument()
+  expect(screen.getByText(/start a new test/i)).toBeInTheDocument()
+})

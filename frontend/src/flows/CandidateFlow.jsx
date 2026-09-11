@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { createAttempt, getAttemptItems, getReport, pollReport, submitAttempt } from '../api'
+import { createAttempt, getAttemptItems, getHealth, getReport, pollReport, submitAttempt } from '../api'
 import { useAuth } from '../auth/AuthContext'
 import { clearSession, loadSession } from '../testProgress'
 import DeviceCheck from '../screens/DeviceCheck'
@@ -17,6 +17,7 @@ export default function CandidateFlow() {
   const [report, setReport] = useState(null)
   const [initialIndex, setInitialIndex] = useState(0)
   const [submitError, setSubmitError] = useState(null)
+  const [engineOffline, setEngineOffline] = useState(false)
   const submittedRef = useRef(false)
 
   const runScoring = async (id = attemptId) => {
@@ -27,6 +28,11 @@ export default function CandidateFlow() {
         await submitAttempt(id)
         submittedRef.current = true
       }
+      // Best-effort: tell the candidate up front if the judge is down rather
+      // than spinning for five minutes. The answers are already saved.
+      getHealth()
+        .then((h) => setEngineOffline(h?.ollama === false))
+        .catch(() => {})
       const fetchedReport = await pollReport(id)
       setReport(fetchedReport)
       setScreen('report')
@@ -105,7 +111,7 @@ export default function CandidateFlow() {
         />
       )}
       {screen === 'submitting' && (
-        <Submitting error={submitError} onRetry={runScoring} />
+        <Submitting error={submitError} onRetry={runScoring} engineOffline={engineOffline} />
       )}
       {screen === 'report' && report && (
         <div className="flex flex-col gap-4">

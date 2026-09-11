@@ -82,3 +82,30 @@ def test_startup_seeds_auth(tmp_path, monkeypatch):
     with Session(test_engine) as s:
         user = s.exec(select(User).where(User.email == "seed-admin@corp.com")).first()
         assert user is not None
+
+
+def test_startup_fails_attempts_left_scoring_by_a_crash(tmp_path, monkeypatch):
+    """A BackgroundTasks pipeline dies with the process. An attempt still in
+    ``scoring`` at startup can never finish, so it is marked ``error`` with a
+    category a recruiter can act on (re-score)."""
+    import db
+    from fastapi.testclient import TestClient
+    from models import Attempt
+
+    test_engine = create_engine(
+        f"sqlite:///{tmp_path / 'stuck.db'}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(test_engine)
+    monkeypatch.setattr(db, "engine", test_engine)
+    with Session(test_engine) as s:
+        s.add(Attempt(id="stuck", name="S", status="scoring"))
+        s.add(Attempt(id="fine", name="F", status="in_progress"))
+        s.commit()
+
+    with TestClient(main.app):
+        pass
+
+    with Session(test_engine) as s:
+        assert s.get(Attempt, "stuck").status == "error"
+        assert s.get(Attempt, "stuck").error == "interrupted"
+        assert s.get(Attempt, "fine").status == "in_progress"

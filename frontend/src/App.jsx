@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { getReport } from './api'
+import { getReport, pollReport, rescoreAttempt } from './api'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import RequireAuth from './auth/RequireAuth'
 import AppShell from './components/AppShell'
@@ -33,10 +33,33 @@ function ReportRoute() {
   const { has } = useAuth()
   const [report, setReport] = useState(null)
   const [err, setErr] = useState(false)
+  const [rescoreBusy, setRescoreBusy] = useState(false)
+  const [rescoreError, setRescoreError] = useState(null)
   const recruiterView = has('candidates.view')
   useEffect(() => {
     getReport(attemptId).then(setReport).catch(() => setErr(true))
   }, [attemptId])
+  // A failed re-score must not tear down the report we already have: keep it
+  // on screen and explain inline, so the button can simply be pressed again.
+  const rescore = async () => {
+    if (rescoreBusy) return
+    setRescoreBusy(true)
+    setRescoreError(null)
+    try {
+      await rescoreAttempt(attemptId)
+    } catch {
+      setRescoreError('Could not start re-scoring. It may already be running, or the attempt is no longer in a failed state.')
+      setRescoreBusy(false)
+      return
+    }
+    try {
+      setReport(await pollReport(attemptId))
+    } catch {
+      setRescoreError('Re-scoring is still running. Refresh this page in a minute.')
+    } finally {
+      setRescoreBusy(false)
+    }
+  }
   return (
     <div className="max-w-3xl mx-auto px-6 py-8 flex flex-col gap-6">
       <Link
@@ -47,7 +70,14 @@ function ReportRoute() {
       </Link>
       {err && <p className="text-center text-red-600">Report not available.</p>}
       {!err && !report && <p className="text-center text-gray-500">Loading…</p>}
-      {report && <Report report={report} />}
+      {report && (
+        <Report
+          report={report}
+          onRescore={recruiterView ? rescore : undefined}
+          rescoreBusy={rescoreBusy}
+          rescoreError={rescoreError}
+        />
+      )}
     </div>
   )
 }
@@ -55,14 +85,6 @@ function ReportRoute() {
 function Dashboard() {
   const navigate = useNavigate()
   return <Recruiter onOpenReport={(attemptId) => navigate(`/report/${attemptId}`)} />
-}
-
-function AdminRoute() {
-  return <Admin />
-}
-
-function AnalyticsRoute() {
-  return <Analytics />
 }
 
 function AppRoutes() {
@@ -76,8 +98,8 @@ function AppRoutes() {
       <Route path="/test" element={<RequireAuth permission="test.take"><AppShell><CandidateFlow /></AppShell></RequireAuth>} />
       <Route path="/report/:attemptId" element={<RequireAuth><AppShell><ReportRoute /></AppShell></RequireAuth>} />
       <Route path="/dashboard" element={<RequireAuth permission="candidates.view"><AppShell><Dashboard /></AppShell></RequireAuth>} />
-      <Route path="/analytics" element={<RequireAuth permission="analytics.view"><AppShell><AnalyticsRoute /></AppShell></RequireAuth>} />
-      <Route path="/admin" element={<RequireAuth permission="roles.manage"><AppShell><AdminRoute /></AppShell></RequireAuth>} />
+      <Route path="/analytics" element={<RequireAuth permission="analytics.view"><AppShell><Analytics /></AppShell></RequireAuth>} />
+      <Route path="/admin" element={<RequireAuth permission="roles.manage"><AppShell><Admin /></AppShell></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

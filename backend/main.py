@@ -48,12 +48,36 @@ def _warm_up_in_background() -> None:
         logger.exception("Ollama warm-up call failed; first real score will pay the load cost")
 
 
+def _ollama_reachable() -> bool:
+    import ollama
+
+    try:
+        ollama.Client(timeout=2).list()
+        return True
+    except Exception:  # noqa: BLE001 - any failure means "not reachable"
+        return False
+
+
+def _whisper_loaded() -> bool:
+    from scoring import asr
+
+    return asr._model is not None
+
+
+@app.get("/api/health")
+def health() -> dict:
+    """Engine availability for the UI's pre-scoring check. Booleans only:
+    no versions, hosts or paths."""
+    return {"ollama": _ollama_reachable(), "whisper": _whisper_loaded()}
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
     load_bank()
 
     from db import engine
+    from scoring.pipeline import fail_interrupted_attempts
     from seed_auth import ensure_default_admin, seed_auth
     from security import clear_throttles
 
@@ -63,6 +87,7 @@ def on_startup() -> None:
     with Session(engine) as session:
         seed_auth(session)
         ensure_default_admin(session)
+        fail_interrupted_attempts(session)
 
     # Fire-and-forget: don't block server startup on model warm-up.
     threading.Thread(target=_warm_up_in_background, daemon=True).start()

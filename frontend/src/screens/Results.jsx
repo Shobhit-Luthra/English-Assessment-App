@@ -96,15 +96,26 @@ export default function Results() {
                     {a.status === 'done' && a.cir != null ? `  CIR ${a.cir}` : ''}
                   </p>
                 </div>
-                {a.status === 'done' ? (
+                {a.status === 'done' && (
                   <Link
                     to={`/report/${a.attempt_id}`}
                     className="text-blue-700 font-medium text-sm"
                   >
                     View report
                   </Link>
-                ) : (
+                )}
+                {a.status === 'scoring' && (
                   <span className="text-sm text-gray-400">Scoring…</span>
+                )}
+                {a.status === 'in_progress' && (
+                  <Link to="/test" className="text-blue-700 font-medium text-sm">
+                    Resume
+                  </Link>
+                )}
+                {a.status === 'error' && (
+                  <span className="text-sm text-red-600">
+                    Scoring failed — a recruiter can re-run it
+                  </span>
                 )}
               </li>
             ))}

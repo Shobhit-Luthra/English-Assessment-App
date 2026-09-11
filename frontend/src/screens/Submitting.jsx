@@ -1,4 +1,4 @@
-export default function Submitting({ error, onRetry }) {
+export default function Submitting({ error, onRetry, engineOffline = false }) {
   if (error) {
     return (
       <div className="max-w-md mx-auto flex flex-col items-center gap-4 p-6 text-center">
@@ -11,6 +11,18 @@ export default function Submitting({ error, onRetry }) {
         >
           Check again
         </button>
+      </div>
+    )
+  }
+
+  if (engineOffline) {
+    return (
+      <div className="max-w-md mx-auto flex flex-col items-center gap-4 p-6 text-center">
+        <p className="text-lg font-medium">The scoring engine is offline</p>
+        <p className="text-sm text-gray-500">
+          Your answers are saved, but scoring could not run right now. A recruiter can re-run it
+          later, and your result will then appear under My results.
+        </p>
       </div>
     )
   }
