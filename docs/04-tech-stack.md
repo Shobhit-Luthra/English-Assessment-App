@@ -21,7 +21,7 @@ Two columns matter: **what it is** (plain words) and **why this one over the obv
 | Speech-to-text | **faster-whisper** | Audio → text + per-word timestamps |
 | Audio decoding | **ffmpeg** | Converts browser webm/opus into what Whisper can read |
 | LLM runtime | **Ollama** | Runs a language model locally, exposes it over localhost |
-| Judge model | **qwen2.5:3b-instruct** | Scores language quality against the rubric |
+| Judge model | **qwen3:8b** | Scores language quality against the rubric (thinking disabled for the call) |
 | Fluency scoring | **Plain Python** | Arithmetic over word timestamps. No library, no model |
 
 **Total external services: zero. Total runtime cost: ₹0.**
@@ -45,7 +45,7 @@ ffmpeg -version    # must print, or nothing downstream works
 ### Ollama
 ```bash
 # install from ollama.com for your OS, then:
-ollama pull qwen2.5:3b-instruct
+ollama pull qwen3:8b
 ollama list                       # confirm it's there
 ```
 
@@ -89,8 +89,8 @@ Same model weights, reimplemented on CTranslate2 — roughly **4× faster with l
 ### Ollama over a hosted API
 Removes your last network dependency, your last API key, and your last quota. It also hands you a genuinely good answer when a recruiter asks where candidate voice data goes: *nowhere — it never leaves the machine.*
 
-### qwen2.5:3b-instruct over a 7B
-Rubric scoring against explicit band descriptors is a constrained task, not open reasoning. The 3B is ~2 GB resident and answers in 10–20 s on CPU; the 7B is ~5 GB and 30–60 s. Fifteen seconds versus fifty is the difference between a demo that feels like a product and one that feels like a science experiment — *and* the 3B leaves RAM headroom so Whisper isn't fighting it.
+### qwen3:8b over qwen2.5:3b-instruct
+The build started on the 3B for speed (~2 GB resident, 10–20 s on CPU) and was later switched to `qwen3:8b` (~5 GB on disk, ~6 GB resident) as the local judge (see `assessment-tool-fixes.md` §2). The 8B is a thinking model, so the judge call disables thinking — otherwise it spends the token budget reasoning and returns empty JSON. The pipeline still unloads Whisper before the judge call so the two never compete for RAM. `OLLAMA_JUDGE_MODEL` overrides the choice without a code change.
 
 ### Vite over Next.js
 You need four screens and no server-side rendering, no routing, no SEO. Next.js buys you nothing here and costs you configuration.
